@@ -78,7 +78,15 @@ def load_vit_weights(model, vit_path):
     loaded_keys = 0
 
     def convert_state_dict(state_dict):
+        """
+        Convert ViT state dict with separate q_proj, k_proj, v_proj to merged qkv format.
+        Also rename out_proj to proj.
+        """
         new_state_dict = {}
+        # Collect q, k, v weights for merging
+        qkv_weights = {}  # {layer_prefix: {'q': tensor, 'k': tensor, 'v': tensor}}
+        qkv_biases = {}   # {layer_prefix: {'q': tensor, 'k': tensor, 'v': tensor}}
+        
         for key, value in state_dict.items():
             if key.endswith(".inv_freq"):
                 continue
@@ -89,9 +97,59 @@ def load_vit_weights(model, vit_path):
             if key.startswith("layernorm_post."):
                 continue
             
-            # Simply add model.visual. prefix
+            # Handle q_proj, k_proj, v_proj -> qkv merging
+            if ".self_attn.q_proj." in key or ".self_attn.k_proj." in key or ".self_attn.v_proj." in key:
+                # Extract layer prefix (e.g., "encoder.layers.0.self_attn")
+                if ".q_proj." in key:
+                    layer_prefix = key.replace(".q_proj.weight", "").replace(".q_proj.bias", "")
+                    proj_type = "q"
+                elif ".k_proj." in key:
+                    layer_prefix = key.replace(".k_proj.weight", "").replace(".k_proj.bias", "")
+                    proj_type = "k"
+                else:  # v_proj
+                    layer_prefix = key.replace(".v_proj.weight", "").replace(".v_proj.bias", "")
+                    proj_type = "v"
+                
+                is_weight = key.endswith(".weight")
+                
+                if is_weight:
+                    if layer_prefix not in qkv_weights:
+                        qkv_weights[layer_prefix] = {}
+                    qkv_weights[layer_prefix][proj_type] = value
+                else:  # bias
+                    if layer_prefix not in qkv_biases:
+                        qkv_biases[layer_prefix] = {}
+                    qkv_biases[layer_prefix][proj_type] = value
+                continue
+            
+            # Handle out_proj -> proj renaming
+            if ".self_attn.out_proj." in key:
+                new_key = key.replace(".out_proj.", ".proj.")
+                new_key = "model.visual." + new_key
+                new_state_dict[new_key] = value
+                continue
+            
+            # Simply add model.visual. prefix for other keys
             new_key = "model.visual." + key
             new_state_dict[new_key] = value
+        
+        # Merge q, k, v weights into qkv
+        for layer_prefix, qkv_dict in qkv_weights.items():
+            if 'q' in qkv_dict and 'k' in qkv_dict and 'v' in qkv_dict:
+                # Stack in order: q, k, v
+                merged_weight = torch.cat([qkv_dict['q'], qkv_dict['k'], qkv_dict['v']], dim=0)
+                new_key = "model.visual." + layer_prefix + ".qkv.weight"
+                new_state_dict[new_key] = merged_weight
+                print(f"Merged QKV weights for {layer_prefix}: {merged_weight.shape}")
+        
+        # Merge q, k, v biases into qkv
+        for layer_prefix, qkv_dict in qkv_biases.items():
+            if 'q' in qkv_dict and 'k' in qkv_dict and 'v' in qkv_dict:
+                # Stack in order: q, k, v
+                merged_bias = torch.cat([qkv_dict['q'], qkv_dict['k'], qkv_dict['v']], dim=0)
+                new_key = "model.visual." + layer_prefix + ".qkv.bias"
+                new_state_dict[new_key] = merged_bias
+        
         return new_state_dict
     
     vit_weights = convert_state_dict(vit_weights)
@@ -273,7 +331,14 @@ def validate_vit_consistency(model, vit_path, img_path, processor):
     merged_visual = model.model.visual.to(dtype=torch.bfloat16, device=device)
     merged_visual.eval()
     
-    original_vit = OneVisionEncoderModel.from_pretrained(vit_path, attn_implementation="flash_attention_2")
+    # Use manual load_state_dict instead of from_pretrained to ensure correct weight loading
+    # from_pretrained has a bug where weights are not correctly loaded for this model
+    vit_config = OneVisionEncoderConfig.from_pretrained(vit_path)
+    vit_config._attn_implementation = "flash_attention_2"  # Enable flash attention 2
+    original_vit = OneVisionEncoderModel(vit_config)
+    vit_weights_path = os.path.join(vit_path, "model.safetensors")
+    vit_weights = load_file(vit_weights_path)
+    original_vit.load_state_dict(vit_weights, strict=True)
     original_vit = original_vit.to(dtype=torch.bfloat16, device=device)
     original_vit.eval()
     

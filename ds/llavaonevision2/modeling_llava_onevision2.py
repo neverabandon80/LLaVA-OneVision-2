@@ -444,11 +444,8 @@ class LlavaViTFlashAttention2(nn.Module):
 
         self.scale = self.head_dim**-0.5
         self.dropout = config.attention_dropout
-
-        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
-        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
-        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
-        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.qkv = nn.Linear(self.embed_dim, self.embed_dim * 3)
+        self.proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def forward(
         self,
@@ -461,15 +458,12 @@ class LlavaViTFlashAttention2(nn.Module):
         Forward pass using Flash Attention 2.
         """
         batch_size, q_len, _ = hidden_states.size()
-
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        q, k, v = self.qkv(hidden_states).reshape(batch_size, q_len, 3, self.num_heads, self.head_dim).permute(2, 0, 1, 3, 4).unbind(0)
 
         # Flash Attention requires (B, L, H, D) format
-        query_states = query_states.view(batch_size, q_len, self.num_heads, self.head_dim)
-        key_states = key_states.view(batch_size, q_len, self.num_heads, self.head_dim)
-        value_states = value_states.view(batch_size, q_len, self.num_heads, self.head_dim)
+        query_states = q
+        key_states = k
+        value_states = v
 
         # Apply RoPE if provided
         if rotary_pos_emb is not None:
@@ -499,7 +493,8 @@ class LlavaViTFlashAttention2(nn.Module):
         attn_output = attn_output.reshape(batch_size, q_len, self.embed_dim)
 
         # No extra casting here.
-        attn_output = self.out_proj(attn_output)
+        # attn_output = self.out_proj(attn_output)
+        attn_output = self.proj(attn_output)
 
         return attn_output, None
 
@@ -1208,7 +1203,7 @@ class LlavaOnevision2ForConditionalGeneration(LlavaOnevision2PreTrainedModel, Ge
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
     }
-    _tied_weights_keys = ["lm_head.weight"]
+    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     # Reference: fix gemma3 grad acc #37208
     accepts_loss_kwargs = False
 
