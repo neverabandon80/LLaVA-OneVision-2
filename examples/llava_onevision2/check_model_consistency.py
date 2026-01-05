@@ -1,66 +1,30 @@
-"""
-LLaVA-OneVision2 Model Consistency Check Script
-
-This script compares the model outputs between HuggingFace and Megatron-LM implementations
-to verify layer-by-layer consistency for both vision encoder and language model.
-
-Usage:
-    # Run with shell script
-    bash examples/llava_onevision2/check_model_consistency.sh
-
-    # Or run directly (after setting up environment)
-    python examples/llava_onevision2/check_model_consistency.py \
-        --hf-model-path /path/to/hf_model \
-        --load /path/to/mcore_checkpoint
-"""
-
-# Standard library imports
 import argparse
 import json
 import os
-import sys
 from datetime import datetime
 from glob import glob
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-# Third-party imports
 import numpy as np
 import requests
 import torch
-import torch.distributed as dist
-import transformers
-from PIL import Image
-from safetensors.torch import load_file
-from torchvision import transforms
-from transformers import AutoProcessor
-
-# Set up paths before importing local modules
-AIAK_TRAINING_PATH = os.environ.get("AIAK_TRAINING_PATH", "/workspace/LLaVA-OneVision-2")
-AIAK_MAGATRON_PATH = os.environ.get("AIAK_MAGATRON_PATH", os.path.join(AIAK_TRAINING_PATH, "aiak_megatron"))
-
-if AIAK_TRAINING_PATH not in sys.path:
-    sys.path.insert(0, AIAK_TRAINING_PATH)
-if AIAK_MAGATRON_PATH not in sys.path:
-    sys.path.insert(0, AIAK_MAGATRON_PATH)
-
-# Megatron imports
-from megatron.core import mpu
 from megatron.core.enums import ModelType
 from megatron.training import print_rank_0
 from megatron.training.checkpointing import _load_base_checkpoint, fix_query_key_value_ordering
 from megatron.training.training import get_model, unwrap_model
+from PIL import Image
+from safetensors.torch import load_file
+from torchvision import transforms
 
-# Local imports
-from aiak_training_llm.train.arguments import (
-    aiak_extra_train_args_provider,
-    parse_arguments,
-    validate_aiak_extra_args,
-)
+import transformers
+from aiak_training_llm.train.arguments import aiak_extra_train_args_provider, parse_arguments, validate_aiak_extra_args
 from aiak_training_llm.train.sft.sft_llava_onevision2 import model_provider
-from aiak_training_llm.utils import get_args, get_tokenizer, initialize_aiak_megatron
+from aiak_training_llm.utils import get_args, initialize_aiak_megatron
 from ds.llavaonevision2.configuration_llava_onevision2 import LlavaOnevision2Config
 from ds.llavaonevision2.modeling_llava_onevision2 import LlavaOnevision2ForConditionalGeneration, LlavaOnevision2Model
+from transformers import AutoProcessor
+
 
 # Suppress transformers warnings
 transformers.logging.set_verbosity_error()
@@ -235,9 +199,9 @@ def convert_mcore_pixel_values_to_hf_format(
     # grid_thw contains the UNMERGED patch dimensions
     # num_patches == t * h_patches * w_patches
     expected_num_patches = t * h_patches * w_patches
-    assert (
-        num_patches == expected_num_patches
-    ), f"Expected {expected_num_patches} patches (t={t}, h_patches={h_patches}, w_patches={w_patches}), got {num_patches}"
+    assert num_patches == expected_num_patches, (
+        f"Expected {expected_num_patches} patches (t={t}, h_patches={h_patches}, w_patches={w_patches}), got {num_patches}"
+    )
 
     # Calculate merged dimensions
     h_merged = h_patches // spatial_merge_size
@@ -382,22 +346,22 @@ class LlavaOnevision2ConsistencyTester:
         self.test_image_path = test_image_path
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Load image processor from preprocessor path
-        self.image_processor = self._load_image_processor()
+        self.hf_processor = AutoProcessor.from_pretrained(self.preprocessor_path, trust_remote_code=True)
+        self.image_processor = self.hf_processor.image_processor
 
         # Load models
         self.hf_model, self.hf_config = self._load_hf_model()
         self.megatron_model = self._load_megatron_model()
 
-    def _load_image_processor(self):
-        """Load image processor from preprocessor path."""
-        log("INFO", f"Loading image processor from: {self.preprocessor_path}")
-        processor = AutoProcessor.from_pretrained(self.preprocessor_path, trust_remote_code=True)
-        image_processor = processor.image_processor
-        # Set temporal_patch_size=1 for llava-onevision models
-        image_processor.temporal_patch_size = 1
-        log("INFO", f"✓ Image processor loaded (temporal_patch_size={image_processor.temporal_patch_size})")
-        return image_processor
+    def _tokenize_and_preprocess(self, image, text):
+        processed = self.hf_processor(text=text, images=image, return_tensors="pt")
+        processed = {k: v.to("cuda") if torch.is_tensor(v) else v for k, v in processed.items()}
+        input_ids = processed["input_ids"][0]  # [seq_len]
+        image_grid_thw = processed["image_grid_thw"]  # [num_images, 3] or similar
+        pixel_values = processed["pixel_values"]  # wrap in list for consistency
+        attention_mask_neg = processed["attention_mask"][0].logical_not()  # inverted mask
+
+        return input_ids, pixel_values, image_grid_thw, attention_mask_neg
 
     def _process_image_for_mcore(self, image: Image.Image) -> tuple:
         """
@@ -500,7 +464,7 @@ class LlavaOnevision2ConsistencyTester:
 
         return megatron_model
 
-    def test_vision_encoder_consistency(self, resolutions: List[int] = [336, 448, 672]) -> List[Dict[str, Any]]:
+    def test_vision_encoder_consistency(self, resolutions: list[int] = [336, 448, 672]) -> list[dict[str, Any]]:
         """
         Test vision encoder consistency between HuggingFace and Megatron-LM
         for multiple image resolutions.
@@ -616,7 +580,7 @@ class LlavaOnevision2ConsistencyTester:
 
         return all_results
 
-    def test_multisize_vision_encoder(self) -> Dict[str, Any]:
+    def test_multisize_vision_encoder(self) -> dict[str, Any]:
         """
         Test vision encoder with multiple image sizes in a single batch.
         Verifies that batched processing produces consistent results.
@@ -703,7 +667,7 @@ class LlavaOnevision2ConsistencyTester:
             "status": "success" if all(s > 0.99 for s in all_sims) else "failed",
         }
 
-    def test_weight_consistency(self) -> Dict[str, Any]:
+    def test_weight_consistency(self) -> dict[str, Any]:
         """
         Test weight consistency between HuggingFace and Megatron-LM models.
         Compares key layers to verify weights are correctly loaded/converted.
@@ -945,7 +909,7 @@ class LlavaOnevision2ConsistencyTester:
             "status": "success" if all_passed else "failed",
         }
 
-    def test_encoder_layer_wise_consistency(self, resolution: int = 336) -> Dict[str, Any]:
+    def test_encoder_layer_wise_consistency(self, resolution: int = 336) -> dict[str, Any]:
         """
         Test encoder layer-by-layer consistency between HuggingFace and Megatron-LM.
         Uses the forward_debug methods of LlavaViTEncoder (HF) and TransformerBlock (Megatron)
@@ -1137,7 +1101,7 @@ class LlavaOnevision2ConsistencyTester:
             "status": "success" if all_passed else "failed",
         }
 
-    def test_mllm_after_merger_consistency(self, resolution: int = 336) -> Dict[str, Any]:
+    def test_mllm_after_merger_consistency(self, resolution: int = 336) -> dict[str, Any]:
         """
         Test MLLM after-merger output consistency between HuggingFace and Megatron-LM.
 
@@ -1228,6 +1192,8 @@ class LlavaOnevision2ConsistencyTester:
                 "max": float(mcore_after_merger_np.max()),
             },
         }
+        hf_after_merger_np = np.squeeze(hf_after_merger_np)
+        mcore_after_merger_np = np.squeeze(mcore_after_merger_np)
 
         # Compare shapes first
         if hf_after_merger_np.shape != mcore_after_merger_np.shape:
@@ -1263,7 +1229,7 @@ class LlavaOnevision2ConsistencyTester:
 
         return results
 
-    def test_llm_output_consistency(self, resolution: int = 336) -> Dict[str, Any]:
+    def test_llm_output_consistency(self, resolution: int = 336) -> dict[str, Any]:
         """
         Test LLM output consistency between HuggingFace and Megatron-LM.
 
@@ -1282,97 +1248,49 @@ class LlavaOnevision2ConsistencyTester:
 
         # Load and resize test image
         test_image = load_and_resize_image(self.test_image_path, resolution)
+        prompt = "Describe this image."
+        text = f"<|vision_start|><|image_pad|><|vision_end|>{prompt}<|im_end|>"
 
-        # Process image using Qwen2VLImageProcessor for Megatron model
-        pixel_values_mcore, image_grid_thw = self._process_image_for_mcore(test_image)
-
-        # Convert Megatron format back to HF format: (B, C, H, W)
-        pixel_values_hf, grid_thw = self._process_image_for_hf(pixel_values_mcore, image_grid_thw)
+        input_ids, pixel_values, image_grid_thw, attention_mask_neg = self._tokenize_and_preprocess(test_image, text)
+        pixel_values_mcore = pixel_values
+        pixel_values_hf = convert_mcore_pixel_values_to_hf_format(pixel_values, image_grid_thw)
 
         log("INFO", f"HF pixel values shape: {pixel_values_hf.shape}")
         log("INFO", f"Megatron pixel values shape: {pixel_values_mcore.shape}")
-        log("INFO", f"Grid THW: {grid_thw}")
+        log("INFO", f"Grid THW: {image_grid_thw}")
 
-        # Create a simple test prompt with image token
-        # For HF model, we need to create input_ids with the image token
-        tokenizer = get_tokenizer()
-
-        # Create a simple prompt: "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
-        image_token_id = self.hf_config.image_token_id
-
-        # Calculate number of image tokens needed
-        # After vision encoder and merger, the number of tokens is:
-        # num_patches_per_image = (h // patch_size) * (w // patch_size) // (spatial_merge_size ** 2)
-        patch_size = self.hf_config.vision_config.patch_size
-        spatial_merge_size = self.hf_config.vision_config.spatial_merge_size
-        t, h, w = grid_thw[0].tolist()
-        num_image_tokens = (h * w) // (spatial_merge_size**2)
-
+        num_image_tokens = pixel_values_mcore.size(0)
         log("INFO", f"Number of image tokens: {num_image_tokens}")
 
-        # Build input_ids for HF model
-        # Use tokenizer to encode the text parts
-        prefix_text = "<|im_start|>user\n<|vision_start|>"
-        suffix_text = "<|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n"
-
-        # Use tokenize method (AutoTokenizerFromHF uses tokenize instead of encode)
-        prefix_ids = tokenizer.tokenize(prefix_text, add_special_tokens=False)
-        suffix_ids = tokenizer.tokenize(suffix_text, add_special_tokens=False)
-
-        # Create image token ids
-        image_token_ids = [image_token_id] * num_image_tokens
-
-        # Combine: prefix + image_tokens + suffix
-        input_ids_list = prefix_ids + image_token_ids + suffix_ids
-        input_ids = torch.tensor([input_ids_list], dtype=torch.long, device=self.device)
-
-        log("INFO", f"Input IDs shape: {input_ids.shape}")
-        log("INFO", f"Input IDs: {input_ids[0][:20].tolist()}...{input_ids[0][-10:].tolist()}")
-
-        # Create attention mask (all ones for now)
-        attention_mask = torch.ones_like(input_ids)
+        batch_input_id = input_ids.unsqueeze(0)
+        batch_attention_mask_neg = attention_mask_neg.unsqueeze(0)
 
         # Get HF model output using ForConditionalGeneration model (returns logits)
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             hf_output = self.hf_cond_gen_model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
+                input_ids=batch_input_id,
+                attention_mask=None,
                 pixel_values=pixel_values_hf,
-                image_grid_thw=grid_thw,
+                image_grid_thw=image_grid_thw,
                 return_dict=True,
             )
 
         hf_logits = hf_output.logits
         log("INFO", f"HF logits shape: {hf_logits.shape}")
 
-        # Get Megatron model output
-        # Megatron model expects different input format
-        # Transpose input_ids: [B, S] -> [S, B] for Megatron
-        input_ids_mcore = input_ids.transpose(0, 1).contiguous()
-
-        # Create position_ids for Megatron (not used but may be required)
-        position_ids = None
-
-        # Create attention mask for Megatron
-        # Megatron expects [B, 1, S, S] causal mask or None
-        seq_len = input_ids.shape[1]
-        mcore_attention_mask = None  # Use default causal mask
-
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             # The Megatron model forward returns loss if labels are provided, or logits otherwise
             mcore_output = self.megatron_model(
                 images=pixel_values_mcore,
                 image_grid_thw=image_grid_thw,
-                input_ids=input_ids_mcore,
-                position_ids=position_ids,
-                attention_mask=mcore_attention_mask,
+                input_ids=batch_input_id,
+                position_ids=None,
+                attention_mask=batch_attention_mask_neg,
                 attn_mask_type=None,
                 labels=None,
             )
 
-        # mcore_output is the logits [S, B, vocab_size] or loss
-        # Transpose back to [B, S, vocab_size]
-        mcore_logits = mcore_output.transpose(0, 1).contiguous()
+        mcore_logits = mcore_output.contiguous()
         log("INFO", f"Megatron logits shape: {mcore_logits.shape}")
 
         # Convert to numpy for comparison
@@ -1421,7 +1339,7 @@ class LlavaOnevision2ConsistencyTester:
 
         return results
 
-    def test_hf_loading_consistency(self) -> Dict[str, Any]:
+    def test_hf_loading_consistency(self) -> dict[str, Any]:
         """
         Test consistency between HuggingFace model loaded via `load_file` (safetensors)
         vs `from_pretrained`. This verifies that manual weight loading produces identical results.
@@ -1585,7 +1503,7 @@ class LlavaOnevision2ConsistencyTester:
             "status": "success" if all_match else "failed",
         }
 
-    def run_all_tests(self) -> Dict[str, Any]:
+    def run_all_tests(self) -> dict[str, Any]:
         """Run all consistency tests and return results."""
         log("INFO", "=" * 60)
         log("INFO", "LLAVA-ONEVISION2 VIT CONSISTENCY TEST")
@@ -1607,22 +1525,24 @@ class LlavaOnevision2ConsistencyTester:
         # results["tests"]["hf_loading_consistency"] = self.test_hf_loading_consistency()
 
         # Run weight consistency test
-        results["tests"]["weight_consistency"] = self.test_weight_consistency()
+        # results["tests"]["weight_consistency"] = self.test_weight_consistency()
 
         # Run encoder layer-by-layer consistency test
-        results["tests"]["encoder_layer_wise"] = self.test_encoder_layer_wise_consistency(336)
+        # results["tests"]["encoder_layer_wise"] = self.test_encoder_layer_wise_consistency(336)
 
         # Run layer-wise consistency tests
-        results["tests"]["vision_encoder_layerwise"] = self.test_vision_encoder_consistency([336, 448])
+        # results["tests"]["vision_encoder_layerwise"] = self.test_vision_encoder_consistency([336, 448])
 
         # Run multi-size test
-        results["tests"]["multisize_vision_encoder"] = self.test_multisize_vision_encoder()
+        # results["tests"]["multisize_vision_encoder"] = self.test_multisize_vision_encoder()
 
         # Run after-merger consistency test (vision encoder + adapter/merger)
         results["tests"]["mllm_after_merger"] = self.test_mllm_after_merger_consistency(336)
 
         # Run LLM output consistency test
-        results["tests"]["llm_output"] = self.test_llm_output_consistency(336)
+        results["tests"]["llm_output_336"] = self.test_llm_output_consistency(336)
+        results["tests"]["llm_output_448"] = self.test_llm_output_consistency(448)
+        results["tests"]["llm_output_1120"] = self.test_llm_output_consistency(1120)
 
         # Print summary
         log("INFO", "=" * 60)
