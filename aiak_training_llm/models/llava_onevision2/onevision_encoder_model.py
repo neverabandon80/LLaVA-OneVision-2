@@ -278,6 +278,7 @@ class OneVisionEncoderModel(VisionModule):
         self.model_type = ModelType.encoder_or_decoder
         self.spatial_merge_size = spatial_merge_size
         self.patch_size = config.patch_size
+        self.frame_windows_size = getattr(config, "frame_windows_size", 4)
         self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
 
         # 3D Rotary position embedding with 4:6:6 split (T:H:W)
@@ -332,6 +333,26 @@ class OneVisionEncoderModel(VisionModule):
         Returns:
             torch.Tensor: Output embeddings of shape [total_patches, hidden_size].
         """
+        if self.frame_windows_size > 0:
+            expanded_grid_thw = []
+            for idx in range(len(grid_thw)):
+                t_val, h_val, w_val = grid_thw[idx].tolist()
+                if t_val > self.frame_windows_size:
+                    # Split t into chunks of frame_windows_size
+                    num_full_windows = t_val // self.frame_windows_size
+                    remainder = t_val % self.frame_windows_size
+
+                    # Add full windows
+                    expanded_grid_thw.extend([[self.frame_windows_size, h_val, w_val]] * num_full_windows)
+
+                    # Add remainder if any
+                    if remainder > 0:
+                        expanded_grid_thw.append([remainder, h_val, w_val])
+                else:
+                    expanded_grid_thw.append([t_val, h_val, w_val])
+
+            grid_thw = torch.tensor(expanded_grid_thw, dtype=torch.int64, device=grid_thw.device)
+
         # Convert patches to embeddings
         x = self.patch_embed(x)
 
@@ -452,6 +473,26 @@ class OneVisionEncoderModel(VisionModule):
                 - "before_adapter": Final output embeddings (before any adapter layers)
         """
         output = {}
+
+        if self.frame_windows_size > 0:
+            expanded_grid_thw = []
+            for idx in range(len(grid_thw)):
+                t_val, h_val, w_val = grid_thw[idx].tolist()
+                if t_val > self.frame_windows_size:
+                    # Split t into chunks of frame_windows_size
+                    num_full_windows = t_val // self.frame_windows_size
+                    remainder = t_val % self.frame_windows_size
+
+                    # Add full windows
+                    expanded_grid_thw.extend([[self.frame_windows_size, h_val, w_val]] * num_full_windows)
+
+                    # Add remainder if any
+                    if remainder > 0:
+                        expanded_grid_thw.append([remainder, h_val, w_val])
+                else:
+                    expanded_grid_thw.append([t_val, h_val, w_val])
+
+            grid_thw = torch.tensor(expanded_grid_thw, dtype=torch.int64, device=grid_thw.device)
 
         # Store input for consistency checking
         output["input_pixel_values"] = x.clone()

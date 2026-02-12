@@ -3,6 +3,7 @@ from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import LayerNorm
 
 from transformers import AutoModel
@@ -24,7 +25,7 @@ from .configuration_llava_onevision2 import LlavaOnevision2Config, LlavaOnevisio
 
 
 if is_flash_attn_2_available():
-    from flash_attn import flash_attn_func
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
 
 
 @dataclass
@@ -337,6 +338,7 @@ def apply_rotary_pos_emb(q, k, freqs):
     k_embed = k_embed.to(orig_k_dtype)
     return q_embed, k_embed
 
+
 def convert_rope_to_block_layout(
     freqs: torch.Tensor, t: int, h: int, w: int, spatial_merge_size: int = 2
 ) -> torch.Tensor:
@@ -417,9 +419,7 @@ def convert_rope_to_block_layout_by_positions(
     t_indices = patch_positions[:, 0]
 
     # Find unique t values and their counts (preserving order)
-    unique_t, inverse_indices, counts = torch.unique_consecutive(
-        t_indices, return_inverse=True, return_counts=True
-    )
+    unique_t, inverse_indices, counts = torch.unique_consecutive(t_indices, return_inverse=True, return_counts=True)
 
     num_groups = unique_t.shape[0]
 
@@ -431,7 +431,7 @@ def convert_rope_to_block_layout_by_positions(
 
     # Fast path: single image, square
     if num_groups == 1:
-        hw = int(seq_len ** 0.5)
+        hw = int(seq_len**0.5)
         if hw * hw == seq_len:
             return convert_rope_to_block_layout(freqs, t=1, h=hw, w=hw, spatial_merge_size=sms)
 
@@ -443,21 +443,17 @@ def convert_rope_to_block_layout_by_positions(
     if all_same_size:
         # Vectorized path: all frames have same spatial size
         group_size = first_count
-        hw = int(group_size ** 0.5)
+        hw = int(group_size**0.5)
 
         if hw * hw == group_size:
             # Square frames: use fully vectorized convert_rope_to_block_layout
             # Reshape freqs to [num_groups, h, w, half] and process as batch
-            return convert_rope_to_block_layout(
-                freqs, t=num_groups, h=hw, w=hw, spatial_merge_size=sms
-            )
+            return convert_rope_to_block_layout(freqs, t=num_groups, h=hw, w=hw, spatial_merge_size=sms)
         elif grid_thw is not None:
             # Non-square but have grid_thw: get h, w from grid_thw
             height = grid_thw[0, 1].item()
             width = grid_thw[0, 2].item()
-            return convert_rope_to_block_layout(
-                freqs, t=num_groups, h=height, w=width, spatial_merge_size=sms
-            )
+            return convert_rope_to_block_layout(freqs, t=num_groups, h=height, w=width, spatial_merge_size=sms)
 
     # Slow path: variable frame sizes, process each group separately
     # Pre-compute cumulative offsets to avoid repeated slicing
@@ -472,7 +468,7 @@ def convert_rope_to_block_layout_by_positions(
         end_idx = start_idx + group_size
 
         # Infer spatial dimensions
-        hw = int(group_size ** 0.5)
+        hw = int(group_size**0.5)
         if hw * hw == group_size:
             h, w = hw, hw
         else:
@@ -486,10 +482,7 @@ def convert_rope_to_block_layout_by_positions(
     return result_freqs
 
 
-def _infer_hw_from_positions(
-    group_positions: torch.Tensor,
-    spatial_merge_size: int = 2
-) -> tuple[int, int]:
+def _infer_hw_from_positions(group_positions: torch.Tensor, spatial_merge_size: int = 2) -> tuple[int, int]:
     """
     Infer height and width from patch positions within a temporal group.
 
@@ -515,6 +508,7 @@ def _infer_hw_from_positions(
     assert w % spatial_merge_size == 0, f"Width {w} not divisible by {spatial_merge_size}"
 
     return h, w
+
 
 class LlavaViTFlashAttention2(nn.Module):
     """
@@ -543,6 +537,8 @@ class LlavaViTFlashAttention2(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         rotary_pos_emb: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
+        cu_seqlens: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Forward pass using Flash Attention 2.
@@ -574,15 +570,55 @@ class LlavaViTFlashAttention2(nn.Module):
         # FIX: Removed the explicit float32 check and downcast.
         # We assume input is already correct (bf16/fp16) thanks to RoPE fix.
 
-        # Flash Attention forward pass
-        attn_output = flash_attn_func(
-            query_states,
-            key_states,
-            value_states,
-            dropout_p=self.dropout if self.training else 0.0,
-            softmax_scale=self.scale,
-            causal=False,
-        )
+        if cu_seqlens is not None:
+            query_states = query_states.reshape(-1, self.num_heads, self.head_dim)
+            key_states = key_states.reshape(-1, self.num_heads, self.head_dim)
+            value_states = value_states.reshape(-1, self.num_heads, self.head_dim)
+
+            attn_output = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens,
+                cu_seqlens_k=cu_seqlens,
+                max_seqlen_q=max_seqlen,
+                max_seqlen_k=max_seqlen,
+                dropout_p=self.dropout if self.training else 0.0,
+                softmax_scale=self.scale,
+                causal=False,
+            )
+            attn_output = attn_output.reshape(batch_size, q_len, self.embed_dim)
+
+        elif attention_mask is not None:
+            attn_mask = attention_mask
+            if attn_mask.dim() == 2:
+                attn_mask = attn_mask.unsqueeze(0)
+            if attn_mask.shape[0] == 1 and batch_size > 1:
+                attn_mask = attn_mask.expand(batch_size, -1, -1)
+            attn_mask = attn_mask.unsqueeze(1)
+
+            q_sdpa = query_states.transpose(1, 2)
+            k_sdpa = key_states.transpose(1, 2)
+            v_sdpa = value_states.transpose(1, 2)
+            attn_output = F.scaled_dot_product_attention(
+                q_sdpa,
+                k_sdpa,
+                v_sdpa,
+                attn_mask=attn_mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=False,
+            )
+            attn_output = attn_output.transpose(1, 2)
+        else:
+            # Flash Attention forward pass
+            attn_output = flash_attn_func(
+                query_states,
+                key_states,
+                value_states,
+                dropout_p=self.dropout if self.training else 0.0,
+                softmax_scale=self.scale,
+                causal=False,
+            )
 
         # Reshape to (B, L, embed_dim)
         attn_output = attn_output.reshape(batch_size, q_len, self.embed_dim)
@@ -611,6 +647,8 @@ class LlavaViTEncoderLayer(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         rotary_pos_emb: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
+        cu_seqlens: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -620,6 +658,8 @@ class LlavaViTEncoderLayer(nn.Module):
             attention_mask=attention_mask,
             rotary_pos_emb=rotary_pos_emb,
             output_attentions=output_attentions,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
         )
         hidden_states = residual + hidden_states
 
@@ -648,6 +688,8 @@ class LlavaViTEncoder(nn.Module):
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
+        cu_seqlens: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> Union[tuple, BaseModelOutput]:
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -663,6 +705,8 @@ class LlavaViTEncoder(nn.Module):
                     attention_mask,
                     rotary_pos_emb,
                     output_attentions,
+                    cu_seqlens,
+                    max_seqlen,
                 )
             else:
                 layer_outputs = layer(
@@ -670,6 +714,8 @@ class LlavaViTEncoder(nn.Module):
                     attention_mask=attention_mask,
                     rotary_pos_emb=rotary_pos_emb,
                     output_attentions=output_attentions,
+                    cu_seqlens=cu_seqlens,
+                    max_seqlen=max_seqlen,
                 )
 
             hidden_states = layer_outputs[0]
@@ -778,6 +824,7 @@ class Siglip2MultiheadAttentionPoolingHead(nn.Module):
 
         return attn_output[:, 0]
 
+
 # ---------------------------------------------------------------------------
 # Vision Model
 # ---------------------------------------------------------------------------
@@ -823,6 +870,121 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         )
 
         self.post_init()
+
+    def _build_cu_seqlens(
+        self,
+        grid_thw: torch.Tensor,
+        total_patches: int,
+        fixed_t: Optional[int] = 4,
+        device: Optional[torch.device] = None,
+    ) -> tuple[torch.Tensor, int]:
+        if grid_thw is None or grid_thw.numel() == 0:
+            # Fallback for no grid_thw: treat as single sequence
+            return torch.tensor([0, total_patches], dtype=torch.int32, device=device), total_patches
+
+        if device is None:
+            device = grid_thw.device
+
+        cu_seqlens = [0]
+        max_seqlen = 0
+        total_entries = grid_thw.shape[0]
+        current_len = 0
+
+        # Calculate cumulative lengths: split sequences based on fixed_t if provided
+        for idx in range(total_entries):
+            t_val = grid_thw[idx, 0].item()
+            h_val = grid_thw[idx, 1].item()
+            w_val = grid_thw[idx, 2].item()
+
+            if fixed_t is not None and fixed_t > 0 and t_val > fixed_t:
+                # Split large t into chunks of fixed_t
+                num_full_windows = t_val // fixed_t
+                remainder = t_val % fixed_t
+
+                # Add full windows
+                for _ in range(num_full_windows):
+                    chunk_patches = fixed_t * int(h_val) * int(w_val)
+                    current_len += chunk_patches
+                    max_seqlen = max(max_seqlen, chunk_patches)
+                    cu_seqlens.append(current_len)
+
+                # Add remainder if any
+                if remainder > 0:
+                    chunk_patches = remainder * int(h_val) * int(w_val)
+                    current_len += chunk_patches
+                    max_seqlen = max(max_seqlen, chunk_patches)
+                    cu_seqlens.append(current_len)
+            else:
+                # Standard case: add as one chunk
+                chunk_patches = t_val * int(h_val) * int(w_val)
+                current_len += chunk_patches
+                max_seqlen = max(max_seqlen, chunk_patches)
+                cu_seqlens.append(current_len)
+
+        last_len = cu_seqlens[-1]
+        if last_len != total_patches:
+            raise ValueError(
+                "cu_seqlens calculation mismatch:\n"
+                f"- total_patches: {total_patches}\n"
+                f"- calculated total: {last_len}\n"
+                f"- grid_thw: {grid_thw}"
+            )
+
+        return torch.tensor(cu_seqlens, dtype=torch.int32, device=device), max_seqlen
+
+    def _build_block_attention_mask(
+        self,
+        grid_thw: torch.Tensor,
+        total_patches: int,
+        fixed_t: Optional[int] = 4,
+        device: Optional[torch.device] = None,
+    ) -> Optional[torch.Tensor]:
+        if grid_thw is None or grid_thw.numel() == 0:
+            return None
+
+        if device is None:
+            device = grid_thw.device
+
+        lengths = []
+        total_entries = grid_thw.shape[0]
+
+        for idx in range(total_entries):
+            t_val = grid_thw[idx, 0].item()
+            h_val = grid_thw[idx, 1].item()
+            w_val = grid_thw[idx, 2].item()
+
+            if fixed_t is not None and fixed_t > 0 and t_val > fixed_t:
+                # Split large t into chunks of fixed_t
+                num_full_windows = t_val // fixed_t
+                remainder = t_val % fixed_t
+
+                # Add full windows
+                for _ in range(num_full_windows):
+                    lengths.append(fixed_t * int(h_val) * int(w_val))
+
+                # Add remainder if any
+                if remainder > 0:
+                    lengths.append(remainder * int(h_val) * int(w_val))
+            else:
+                lengths.append(t_val * int(h_val) * int(w_val))
+
+        total_len = sum(lengths)
+        if total_len != total_patches:
+            raise ValueError(
+                "Block attention mask length mismatch:\n"
+                f"- total_patches: {total_patches}\n"
+                f"- total_len: {total_len}\n"
+                f"- grid_thw: {grid_thw}"
+            )
+
+        attn_mask = torch.ones((total_len, total_len), dtype=torch.bool, device=device)
+        start = 0
+        for size in lengths:
+            end = start + size
+            attn_mask[start:end, start:end] = False
+            start = end
+
+        return attn_mask
 
     @replace_return_docstrings(output_type=BaseModelOutputWithPooling, config_class=LlavaOnevision2VisionConfig)
     def forward(
@@ -882,7 +1044,7 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         else:
             # Fallback: infer from total_patches (assume single frame, square)
             t_frames = 1
-            height = int(total_patches ** 0.5)
+            height = int(total_patches**0.5)
             width = height
 
         if patch_positions is not None and patch_positions.dim() == 3:
@@ -904,6 +1066,13 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         # 3. Pre-Norm & Encoder
         hidden_states = self.layernorm_pre(hidden_states)
 
+        cu_seqlens, max_seqlen = self._build_cu_seqlens(
+            grid_thw=grid_thw,
+            total_patches=total_patches,
+            fixed_t=getattr(self.config, "frame_windows_size", 4),
+            device=hidden_states.device,
+        )
+
         encoder_outputs = self.encoder(
             hidden_states,
             attention_mask=None,
@@ -911,6 +1080,8 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=True,  # Always get hidden states to use -2 layer
             return_dict=True,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
         )
 
         # Use second-to-last layer output for better feature representation
@@ -1002,9 +1173,7 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         batch_size, total_patches, _ = hidden_states.shape
 
         # 2. Visible Indices (simplified for debug - use all patches)
-        visible_indices = (
-            torch.arange(total_patches, device=hidden_state.device).unsqueeze(0).expand(batch_size, -1)
-        )
+        visible_indices = torch.arange(total_patches, device=hidden_state.device).unsqueeze(0).expand(batch_size, -1)
 
         # 3. RoPE Construction
         freqs_full = self.video_rope.forward_with_thw(
@@ -1030,7 +1199,12 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         # 5. Encoder with layer-by-layer debug
         encoder_debug_output = self.encoder.forward_debug(
             hidden_states,
-            attention_mask=None,
+            attention_mask=self._build_block_attention_mask(
+                grid_thw=grid_thw,
+                total_patches=total_patches,
+                fixed_t=4,
+                device=hidden_states.device,
+            ),
             rotary_pos_emb=freqs_visible,
         )
 
@@ -1086,7 +1260,10 @@ class LlavaOnevision2Model(LlavaOnevision2PreTrainedModel):
         return self.language_model
 
     def get_video_features(
-        self, pixel_values_videos: torch.FloatTensor, video_grid_thw: Optional[torch.LongTensor] = None, patch_positions=None
+        self,
+        pixel_values_videos: torch.FloatTensor,
+        video_grid_thw: Optional[torch.LongTensor] = None,
+        patch_positions=None,
     ):
         """
         Encodes videos into continuous embeddings that can be forwarded to the language model.
@@ -1125,7 +1302,9 @@ class LlavaOnevision2Model(LlavaOnevision2PreTrainedModel):
 
         return video_embeds
 
-    def get_image_features(self, pixel_values, image_grid_thw: Optional[torch.LongTensor] = None, patch_positions=None):
+    def get_image_features(
+        self, pixel_values, image_grid_thw: Optional[torch.LongTensor] = None, patch_positions=None
+    ):
         """
         Encodes images into continuous embeddings that can be forwarded to the language model.
 

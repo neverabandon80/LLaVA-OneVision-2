@@ -212,6 +212,7 @@ class VisionConfig:
     add_bias_linear: bool = False
     add_qkv_bias: bool = False
     position_embedding_type: str = "none"
+    frame_windows_size: int = 4
 
 
 def get_vision_config(model_family, model_name):

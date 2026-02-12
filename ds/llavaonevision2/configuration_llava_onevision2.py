@@ -26,6 +26,7 @@ class LlavaOnevision2VisionConfig(PretrainedConfig):
         spatial_merge_size=2,
         tokens_per_second=1,
         temporal_patch_size=1,
+        frame_windows_size=4,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -47,6 +48,7 @@ class LlavaOnevision2VisionConfig(PretrainedConfig):
         self.spatial_merge_size = spatial_merge_size
         self.tokens_per_second = tokens_per_second
         self.temporal_patch_size = temporal_patch_size
+        self.frame_windows_size = frame_windows_size
 
 
 class LlavaOnevision2Config(PretrainedConfig):
