@@ -7,6 +7,7 @@ Expected JSONL fields (per line):
 - messages: List[{"role": "user|assistant|system", "content": str}]
 - images: List[path] (frame images or still images)
 - patch_positions: Optional[List[path]] (npy files)
+- fps: Optional[float|int]
 
 This script writes WebDataset shards and a minimal Megatron-Energon config
 for MultiMixQASample, with an auto-generated sample_loader.
@@ -81,6 +82,7 @@ def sample_loader(sample: dict) -> dict:
 		messages=messages,
 		system=system,
 		image=images if len(images) > 0 else None,
+		fps=data.get('fps'),
 	)
 	if patch_positions is not None:
 		result['patch_positions'] = patch_positions
@@ -180,6 +182,9 @@ def _build_sample(entry: dict, idx: int, image_root: str | None, sample_prefix: 
         "messages": messages,
         "image_keys": image_keys,
     }
+    if entry.get("fps") is not None:
+        payload["fps"] = entry.get("fps")
+
     if patch_positions_keys:
         payload["patch_positions_keys"] = patch_positions_keys
     sample["json"] = json.dumps(payload, ensure_ascii=False).encode("utf-8")

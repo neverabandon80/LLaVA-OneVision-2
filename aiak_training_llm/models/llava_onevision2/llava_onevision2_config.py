@@ -48,6 +48,24 @@ class LlavaOnevision2Config:
     num_experts: int = None
     moe_ffn_hidden_size: int = None
 
+@register_model_config(model_family=VisionLanguageModelFamilies.LLAVA_ONEVISION2, model_arch="llava-onevision2-layer1")
+def llava_onevision2_layer1():
+    """llava-onevision2-layer1"""
+    return LlavaOnevision2Config(
+        num_layers=1,
+        hidden_size=2048,
+        ffn_hidden_size=6144,
+        num_attention_heads=16,
+        group_query_attention=True,
+        num_query_groups=8,
+        vocab_size_in_config_file=151936,
+        make_vocab_size_divisible_by=128,
+        qk_layernorm=True,
+        kv_channels=128,
+        add_qkv_bias=False,
+        rotary_base=1000000,
+    )
+
 
 @register_model_config(model_family=VisionLanguageModelFamilies.LLAVA_ONEVISION2, model_arch="llava-onevision2-2b")
 def llava_onevision2_2b():
@@ -246,7 +264,8 @@ def get_vision_config(model_family, model_name):
         config.hidden_size = 1664
         config.ffn_hidden_size = 8192
         config.kv_channels = 104
-
+    elif "llava-onevision2-layer1" == model_name:
+        config.num_layers = 1
     return config
 
 

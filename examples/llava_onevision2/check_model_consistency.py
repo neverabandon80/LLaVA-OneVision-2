@@ -353,6 +353,17 @@ class LlavaOnevision2ConsistencyTester:
         self.hf_model, self.hf_config = self._load_hf_model()
         self.megatron_model = self._load_megatron_model()
 
+    def _generate_patch_positions(self, grid_thw: torch.Tensor, device: torch.device) -> torch.Tensor:
+        patch_positions = []
+        for i in range(grid_thw.shape[0]):
+            t, h, w = grid_thw[i].tolist()
+            t_idx = torch.arange(t, device=device, dtype=torch.float32)
+            h_idx = torch.arange(h, device=device, dtype=torch.float32)
+            w_idx = torch.arange(w, device=device, dtype=torch.float32)
+            mesh_t, mesh_h, mesh_w = torch.meshgrid(t_idx, h_idx, w_idx, indexing="ij")
+            patch_positions.append(torch.stack([mesh_t, mesh_h, mesh_w], dim=-1).reshape(-1, 3))
+        return torch.cat(patch_positions, dim=0)
+
     def _tokenize_and_preprocess(self, image, text):
         processed = self.hf_processor(text=text, images=image, return_tensors="pt")
         processed = {k: v.to("cuda") if torch.is_tensor(v) else v for k, v in processed.items()}
@@ -512,12 +523,17 @@ class LlavaOnevision2ConsistencyTester:
             log("INFO", f"  grid_thw: {grid_thw.tolist()}")
             log("INFO", "=" * 40)
 
+            # Generate patch_positions for merged model
+            patch_positions = self._generate_patch_positions(grid_thw, pixel_values_hf.device)
+
             # Get outputs from both models using forward_debug
             # Both HF and Megatron models now receive (num_patches, patch_dim) format
             with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                hf_debug_outputs = self.hf_model.forward_debug(pixel_values_hf, grid_thw)
+                hf_debug_outputs = self.hf_model.forward_debug(
+                    pixel_values_hf, grid_thw, patch_positions=patch_positions
+                )
                 megatron_debug_outputs = self.megatron_model.vision_model.forward_debug(
-                    pixel_values_mcore, grid_thw=grid_thw
+                    pixel_values_mcore, grid_thw=grid_thw, patch_positions=patch_positions
                 )
 
             # Compare layers
@@ -595,9 +611,19 @@ class LlavaOnevision2ConsistencyTester:
 
         # Get HF outputs for individual images
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            hf_out_224 = self.hf_model.forward_debug(pixel_224_hf, grid_thw_224)["before_adapter"]
-            hf_out_336 = self.hf_model.forward_debug(pixel_336_hf, grid_thw_336)["before_adapter"]
-            hf_out_448 = self.hf_model.forward_debug(pixel_448_hf, grid_thw_448)["before_adapter"]
+            patch_pos_224 = self._generate_patch_positions(grid_thw_224, pixel_224_hf.device)
+            patch_pos_336 = self._generate_patch_positions(grid_thw_336, pixel_336_hf.device)
+            patch_pos_448 = self._generate_patch_positions(grid_thw_448, pixel_448_hf.device)
+
+            hf_out_224 = self.hf_model.forward_debug(pixel_224_hf, grid_thw_224, patch_positions=patch_pos_224)[
+                "before_adapter"
+            ]
+            hf_out_336 = self.hf_model.forward_debug(pixel_336_hf, grid_thw_336, patch_positions=patch_pos_336)[
+                "before_adapter"
+            ]
+            hf_out_448 = self.hf_model.forward_debug(pixel_448_hf, grid_thw_448, patch_positions=patch_pos_448)[
+                "before_adapter"
+            ]
 
         # No conversion needed - HF model now uses the same 2x2 memory layout as mcore
 
@@ -611,15 +637,20 @@ class LlavaOnevision2ConsistencyTester:
 
         # Get Megatron outputs for individual images (using Megatron input format)
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            mcore_out_224 = self.megatron_model.vision_model.forward_debug(pixel_224_mcore, grid_thw=grid_thw_224)[
-                "before_adapter"
-            ]
-            mcore_out_336 = self.megatron_model.vision_model.forward_debug(pixel_336_mcore, grid_thw=grid_thw_336)[
-                "before_adapter"
-            ]
-            mcore_out_448 = self.megatron_model.vision_model.forward_debug(pixel_448_mcore, grid_thw=grid_thw_448)[
-                "before_adapter"
-            ]
+            # Regenerate patch positions for mcore just in case
+            patch_pos_224 = self._generate_patch_positions(grid_thw_224, pixel_224_mcore.device)
+            patch_pos_336 = self._generate_patch_positions(grid_thw_336, pixel_336_mcore.device)
+            patch_pos_448 = self._generate_patch_positions(grid_thw_448, pixel_448_mcore.device)
+
+            mcore_out_224 = self.megatron_model.vision_model.forward_debug(
+                pixel_224_mcore, grid_thw=grid_thw_224, patch_positions=patch_pos_224
+            )["before_adapter"]
+            mcore_out_336 = self.megatron_model.vision_model.forward_debug(
+                pixel_336_mcore, grid_thw=grid_thw_336, patch_positions=patch_pos_336
+            )["before_adapter"]
+            mcore_out_448 = self.megatron_model.vision_model.forward_debug(
+                pixel_448_mcore, grid_thw=grid_thw_448, patch_positions=patch_pos_448
+            )["before_adapter"]
 
         mcore_features_224 = mcore_out_224.float().cpu().numpy()
         mcore_features_336 = mcore_out_336.float().cpu().numpy()
@@ -896,7 +927,7 @@ class LlavaOnevision2ConsistencyTester:
     def test_encoder_layer_wise_consistency(self, resolution: int = 336) -> dict[str, Any]:
         """
         Test encoder layer-by-layer consistency between HuggingFace and Megatron-LM.
-        Uses the forward_debug methods of LlavaViTEncoder (HF) and TransformerBlock (Megatron)
+        Uses the forward_debug methods of OneVisionEncoderEncoder (HF) and TransformerBlock (Megatron)
         to compare each layer's input and output.
 
         Args:
@@ -922,10 +953,15 @@ class LlavaOnevision2ConsistencyTester:
         log("INFO", f"Megatron pixel values shape: {pixel_values_mcore.shape}")
         log("INFO", f"Grid THW: {grid_thw}")
 
+        # Generate patch_positions for merged model
+        patch_positions = self._generate_patch_positions(grid_thw, pixel_values_hf.device)
+
         # Get vision model debug outputs - this gives us encoder-level debug info
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            hf_vision_debug = self.hf_model.forward_debug(pixel_values_hf, grid_thw)
-            mcore_vision_debug = self.megatron_model.vision_model.forward_debug(pixel_values_mcore, grid_thw=grid_thw)
+            hf_vision_debug = self.hf_model.forward_debug(pixel_values_hf, grid_thw, patch_positions=patch_positions)
+            mcore_vision_debug = self.megatron_model.vision_model.forward_debug(
+                pixel_values_mcore, grid_thw=grid_thw, patch_positions=patch_positions
+            )
 
         layer_comparisons = {}
         all_passed = True
@@ -1109,7 +1145,8 @@ class LlavaOnevision2ConsistencyTester:
 
         # Get HF model output using forward_debug (now includes after_merger)
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            hf_debug_output = self.hf_model.forward_debug(pixel_values_hf, grid_thw)
+            patch_positions = self._generate_patch_positions(grid_thw, pixel_values_hf.device)
+            hf_debug_output = self.hf_model.forward_debug(pixel_values_hf, grid_thw, patch_positions=patch_positions)
 
         hf_after_merger = hf_debug_output.get("after_merger")
         if hf_after_merger is None:
@@ -1242,6 +1279,17 @@ class LlavaOnevision2ConsistencyTester:
         batch_input_id = input_ids.unsqueeze(0)
         batch_attention_mask_neg = attention_mask_neg.unsqueeze(0)
 
+        # Generate patch_positions for merged model
+        patch_positions = []
+        for i in range(image_grid_thw.shape[0]):
+            t, h, w = image_grid_thw[i].tolist()
+            t_idx = torch.arange(t, device=pixel_values.device, dtype=torch.float32)
+            h_idx = torch.arange(h, device=pixel_values.device, dtype=torch.float32)
+            w_idx = torch.arange(w, device=pixel_values.device, dtype=torch.float32)
+            mesh_t, mesh_h, mesh_w = torch.meshgrid(t_idx, h_idx, w_idx, indexing="ij")
+            patch_positions.append(torch.stack([mesh_t, mesh_h, mesh_w], dim=-1).reshape(-1, 3))
+        patch_positions = torch.cat(patch_positions, dim=0)
+
         # Get HF model output using ForConditionalGeneration model (returns logits)
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             hf_output = self.hf_cond_gen_model(
@@ -1249,6 +1297,7 @@ class LlavaOnevision2ConsistencyTester:
                 attention_mask=None,
                 pixel_values=pixel_values_hf,
                 image_grid_thw=image_grid_thw,
+                patch_positions=patch_positions,
                 return_dict=True,
             )
 
@@ -1434,8 +1483,13 @@ class LlavaOnevision2ConsistencyTester:
         grid_thw = torch.tensor([[1, 336 // patch_size, 336 // patch_size]], dtype=torch.long, device=self.device)
 
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            pretrained_output = hf_from_pretrained_vision.forward_debug(pixel_values, grid_thw)
-            loadfile_output = hf_load_file_vision.forward_debug(pixel_values, grid_thw)
+            patch_positions = self._generate_patch_positions(grid_thw, self.device)
+            pretrained_output = hf_from_pretrained_vision.forward_debug(
+                pixel_values, grid_thw, patch_positions=patch_positions
+            )
+            loadfile_output = hf_load_file_vision.forward_debug(
+                pixel_values, grid_thw, patch_positions=patch_positions
+            )
 
         output_comparisons = {}
         for key in pretrained_output.keys():
@@ -1502,16 +1556,16 @@ class LlavaOnevision2ConsistencyTester:
         # results["tests"]["hf_loading_consistency"] = self.test_hf_loading_consistency()
 
         # Run weight consistency test
-        # results["tests"]["weight_consistency"] = self.test_weight_consistency()
+        results["tests"]["weight_consistency"] = self.test_weight_consistency()
 
         # Run encoder layer-by-layer consistency test
-        # results["tests"]["encoder_layer_wise"] = self.test_encoder_layer_wise_consistency(336)
+        results["tests"]["encoder_layer_wise"] = self.test_encoder_layer_wise_consistency(336)
 
         # Run layer-wise consistency tests
-        # results["tests"]["vision_encoder_layerwise"] = self.test_vision_encoder_consistency([336, 448])
+        results["tests"]["vision_encoder_layerwise"] = self.test_vision_encoder_consistency([336, 448])
 
         # Run multi-size test
-        # results["tests"]["multisize_vision_encoder"] = self.test_multisize_vision_encoder()
+        results["tests"]["multisize_vision_encoder"] = self.test_multisize_vision_encoder()
 
         # Run after-merger consistency test (vision encoder + adapter/merger)
         results["tests"]["mllm_after_merger"] = self.test_mllm_after_merger_consistency(336)

@@ -43,7 +43,7 @@ from dataclasses import dataclass
 # HuggingFace implementation
 from ds.llavaonevision2.modeling_llava_onevision2 import (
     VisionRotaryEmbedding as HFVisionRotaryEmbedding,
-    LlavaViTEmbeddings as HFPatchEmbed,
+    OneVisionEncoderEmbeddings as HFPatchEmbed,
     rotate_half as hf_rotate_half,
 )
 from ds.llavaonevision2.configuration_llava_onevision2 import LlavaOnevision2VisionConfig

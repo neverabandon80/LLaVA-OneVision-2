@@ -218,7 +218,7 @@ class VisionRotaryEmbedding(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-class LlavaViTEmbeddings(nn.Module):
+class OneVisionEncoderEmbeddings(nn.Module):
     """
     Patch embedding layer that converts pre-processed patches to embeddings.
 
@@ -510,7 +510,7 @@ def _infer_hw_from_positions(group_positions: torch.Tensor, spatial_merge_size: 
     return h, w
 
 
-class LlavaViTFlashAttention2(nn.Module):
+class OneVisionEncoderFlashAttention2(nn.Module):
     """
     Multi-headed attention with RoPE support using Flash Attention 2.
     """
@@ -630,13 +630,13 @@ class LlavaViTFlashAttention2(nn.Module):
         return attn_output, None
 
 
-class LlavaViTEncoderLayer(nn.Module):
+class OneVisionEncoderEncoderLayer(nn.Module):
     """Vision encoder layer with pre-norm and Flash Attention 2."""
 
     def __init__(self, config: LlavaOnevision2VisionConfig):
         super().__init__()
         self.embed_dim = config.hidden_size
-        self.self_attn = LlavaViTFlashAttention2(config)
+        self.self_attn = OneVisionEncoderFlashAttention2(config)
         self.layer_norm1 = get_norm_layer(config)
         self.mlp = SiglipMLP(config)
         self.layer_norm2 = get_norm_layer(config)
@@ -672,11 +672,11 @@ class LlavaViTEncoderLayer(nn.Module):
         return outputs
 
 
-class LlavaViTEncoder(nn.Module):
+class OneVisionEncoderEncoder(nn.Module):
     def __init__(self, config: LlavaOnevision2VisionConfig):
         super().__init__()
         self.config = config
-        self.layers = nn.ModuleList([LlavaViTEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([OneVisionEncoderEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         # Gradient checkpointing support
         self.gradient_checkpointing = False
 
@@ -740,6 +740,8 @@ class LlavaViTEncoder(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         rotary_pos_emb: Optional[torch.Tensor] = None,
+        cu_seqlens: Optional[torch.Tensor] = None,
+        max_seqlen: Optional[int] = None,
     ) -> dict:
         """
         Forward pass with layer-by-layer debug outputs for consistency checking.
@@ -771,6 +773,8 @@ class LlavaViTEncoder(nn.Module):
                 attention_mask=attention_mask,
                 rotary_pos_emb=rotary_pos_emb,
                 output_attentions=False,
+                cu_seqlens=cu_seqlens,
+                max_seqlen=max_seqlen,
             )
             hidden_states = layer_result[0]
 
@@ -788,7 +792,7 @@ class LlavaOnevision2PreTrainedModel(PreTrainedModel):
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _supports_flash_attn_2 = True
-    _no_split_modules = ["LlavaViTEncoderLayer"]
+    _no_split_modules = ["OneVisionEncoderEncoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn = True
     _supports_sdpa = True
@@ -850,9 +854,9 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         self.spatial_merge_size = config.spatial_merge_size
 
         # Vision components
-        self.embeddings = LlavaViTEmbeddings(config)
+        self.embeddings = OneVisionEncoderEmbeddings(config)
         self.layernorm_pre = get_norm_layer(config)
-        self.encoder = LlavaViTEncoder(config)
+        self.encoder = OneVisionEncoderEncoder(config)
         self.video_rope = VisionRotaryEmbedding(config)
 
         if config.use_head:
@@ -1128,6 +1132,7 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         self,
         hidden_state: torch.Tensor,
         grid_thw: torch.Tensor,
+        patch_positions: Optional[torch.Tensor] = None,
     ) -> dict:
         """
         Debug version of forward pass that captures intermediate states.
@@ -1137,8 +1142,10 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
 
         Args:
             hidden_state: Pre-processed patches from Qwen2VL processor.
-                Shape: [total_patches, num_channels, patch_size, patch_size] or [total_patches, patch_dim]
+                Shape: [total_patches, num_channels, patch_size, patch_size]
             grid_thw: Grid sizes tensor of shape [num_samples, 3] with [t, h, w] for each sample.
+                Required for computing RoPE and handling visible indices.
+            patch_positions: Optional explicit patch positions for RoPE computation.
 
         Returns:
             dict: Dictionary containing intermediate outputs:
@@ -1156,15 +1163,8 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         output["input_pixel_values"] = hidden_state.clone()
         output["input_grid_thw"] = grid_thw.clone()
 
-        batch_size = grid_thw.size(0)
-        assert batch_size == 1, "Currently only batch_size=1 is supported for forward_debug."
-
-        # Determine video dimensions for RoPE
-        t_frames = grid_thw[0, 0].item()
-        height = grid_thw[0, 1].item()
-        width = grid_thw[0, 2].item()
-
         # 1. Embeddings
+        # Note: embeddings returns [total_patches, embed_dim], we need to add batch dimension
         hidden_states = self.embeddings(hidden_state)
         if hidden_states.dim() == 2:
             hidden_states = hidden_states.unsqueeze(0)  # [1, total_patches, embed_dim]
@@ -1172,60 +1172,66 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
 
         batch_size, total_patches, _ = hidden_states.shape
 
-        # 2. Visible Indices (simplified for debug - use all patches)
-        visible_indices = torch.arange(total_patches, device=hidden_state.device).unsqueeze(0).expand(batch_size, -1)
+        # 2. RoPE Construction
+        # Get dimensions from grid_thw for block layout conversion
+        if grid_thw is not None:
+            t_frames = grid_thw[0, 0].item()
+            height = grid_thw[0, 1].item()
+            width = grid_thw[0, 2].item()
 
-        # 3. RoPE Construction
-        freqs_full = self.video_rope.forward_with_thw(
-            t=64 if t_frames > 1 else 1,
-            h=height,
-            w=width,
-            device=hidden_state.device,
+        if patch_positions is not None and patch_positions.dim() == 3:
+            patch_positions = patch_positions.squeeze(0)
+
+        freqs_visible = self.video_rope.forward_from_positions(patch_positions)
+
+        # Convert RoPE from row-major to block layout (matching Qwen2VL processor output)
+        # Use position-based grouping for videos with variable frame sizes
+        # Pass grid_thw for reliable h, w extraction (especially for non-square images)
+        freqs_visible = convert_rope_to_block_layout_by_positions(
+            freqs_visible, patch_positions, spatial_merge_size=2, grid_thw=grid_thw
         )
 
-        # Convert RoPE from row-major to block layout
-        freqs_full_block = convert_rope_to_block_layout(
-            freqs_full, 1 if t_frames == 1 else 64, height, width, spatial_merge_size=2
-        ).unsqueeze(0)
-
         # Concatenate D/2 + D/2 -> D for applying rope
-        freqs_visible = torch.cat([freqs_full_block, freqs_full_block], dim=-1)
+        freqs_visible = torch.cat([freqs_visible, freqs_visible], dim=-1)
+        if freqs_visible.dim() == 2:
+            freqs_visible = freqs_visible.unsqueeze(0)
+
         output["rotary_pos_emb"] = freqs_visible.clone()
 
-        # 4. Pre-Norm
+        # 3. Pre-Norm & Encoder
         hidden_states = self.layernorm_pre(hidden_states)
         output["after_pre_layernorm"] = hidden_states.clone()
 
-        # 5. Encoder with layer-by-layer debug
+        cu_seqlens, max_seqlen = self._build_cu_seqlens(
+            grid_thw=grid_thw,
+            total_patches=total_patches,
+            fixed_t=getattr(self.config, "frame_windows_size", 4),
+            device=hidden_states.device,
+        )
+
         encoder_debug_output = self.encoder.forward_debug(
             hidden_states,
-            attention_mask=self._build_block_attention_mask(
-                grid_thw=grid_thw,
-                total_patches=total_patches,
-                fixed_t=4,
-                device=hidden_states.device,
-            ),
+            attention_mask=None,
             rotary_pos_emb=freqs_visible,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
         )
 
         # Extract layer outputs
         output["layer_outputs"] = encoder_debug_output.get("layer_outputs", {})
 
-        # Get second-to-last layer output for merger (matching forward behavior)
-        # In forward_debug of encoder, final_output is the last layer output
-        final_hidden_states = encoder_debug_output.get("final_output", hidden_states)
+        # Use last layer output
+        num_layers = len(self.encoder.layers)
+        sequence_output = output["layer_outputs"][f"layer_{num_layers - 1}_output"]
 
-        # For consistency with Megatron, we use the second-to-last layer
-        # But forward_debug doesn't easily give us that, so we'll use final
-        # and note that this is the output before merger
-        output["before_adapter"] = final_hidden_states.clone()
-
-        # 6. Post-Norm (if exists)
+        # Post-Norm
         if self.layernorm_post is not None:
-            final_hidden_states = self.layernorm_post(final_hidden_states)
+            sequence_output = self.layernorm_post(sequence_output)
 
-        # 7. Merger
-        merged_output = self.merger(final_hidden_states)
+        output["before_adapter"] = sequence_output.clone()
+
+        # Patch merger
+        merged_output = self.merger(sequence_output)
         output["after_merger"] = merged_output.clone()
 
         return output
@@ -1238,7 +1244,7 @@ class LlavaOnevision2Model(LlavaOnevision2PreTrainedModel):
     # Reference: fix gemma3 grad acc #37208
     accepts_loss_kwargs = False
     config: LlavaOnevision2Config
-    _no_split_modules = ["LlavaViTEncoderLayer"]
+    _no_split_modules = ["OneVisionEncoderEncoderLayer"]
 
     def __init__(self, config: LlavaOnevision2Config):
         super().__init__(config)
@@ -1826,10 +1832,10 @@ __all__ = [
     "LlavaOnevision2VisionPretrainedModel",
     # Vision components
     "VisionRotaryEmbedding",
-    "LlavaViTEmbeddings",
-    "LlavaViTFlashAttention2",
-    "LlavaViTEncoderLayer",
-    "LlavaViTEncoder",
+    "OneVisionEncoderEmbeddings",
+    "OneVisionEncoderFlashAttention2",
+    "OneVisionEncoderEncoderLayer",
+    "OneVisionEncoderEncoder",
     "LlavaOnevision2VisionPatchMerger",
     "Siglip2MultiheadAttentionPoolingHead",
 ]

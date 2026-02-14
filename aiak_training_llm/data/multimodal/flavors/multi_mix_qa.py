@@ -26,3 +26,6 @@ class MultiMixQASample(Sample):
 
     # patch positions for each image: List of np.ndarray with shape (num_patches, 3) containing [T, H, W]
     patch_positions: Optional[List[np.ndarray]] = None
+
+    #: The frames per second of the video
+    fps: Optional[Union[float, int]] = None

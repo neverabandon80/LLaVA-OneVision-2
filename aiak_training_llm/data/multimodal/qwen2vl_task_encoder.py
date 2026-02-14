@@ -316,6 +316,10 @@ class Qwen2VLTaskEncoder(TaskEncoder):
 
     def encode_multi_mix_qa(self, sample: MultiMixQASample) -> ImageTaskSample:
         """Encode sample in Qwen2VL style."""
+        if sample.fps is not None:
+            pass
+            # print(f"Sample key: {sample.__key__}, FPS: {sample.fps}")
+
         if self.args.training_phase == constants.TrainingPhase.SFT:
             num_tiles = []
 
