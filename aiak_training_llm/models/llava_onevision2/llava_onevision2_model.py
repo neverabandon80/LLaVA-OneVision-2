@@ -12,7 +12,7 @@ from megatron.core.utils import make_viewless_tensor
 
 from aiak_training_llm.models.llava_onevision2.onevision_encoder_model import OneVisionEncoderModel
 from aiak_training_llm.models.qwen import QwenModel
-from aiak_training_llm.models.qwen_vl.adapter import Adapter
+from aiak_training_llm.models.llava_onevision2.adapter import Adapter
 from aiak_training_llm.models.qwen_vl.utils import get_inputs_on_this_cp_rank
 
 
@@ -222,7 +222,15 @@ class LlavaOnevision2(MegatronModule):
                 image_embeddings = self.vision_model(
                     images, grid_thw=image_grid_thw, patch_positions=patch_positions
                 )  # [img_len, h_vision]
-                image_embeddings = self.adapter(image_embeddings)
+                
+                patch_positions_cat = None
+                if patch_positions is not None:
+                    if isinstance(patch_positions, list):
+                        patch_positions_cat = torch.cat(patch_positions, dim=0)
+                    else:
+                        patch_positions_cat = patch_positions
+                image_embeddings = self.adapter(image_embeddings, patch_positions=patch_positions_cat)
+
                 n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
                 n_image_features = image_embeddings.shape[0]
                 if n_image_tokens != n_image_features:

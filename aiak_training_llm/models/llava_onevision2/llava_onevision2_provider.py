@@ -49,7 +49,7 @@ def llavaov_2_model_provider(
     model_family = get_model_family(args.model_name)
     for k, v in asdict(get_vision_config(model_family, args.model_name)).items():
         setattr(vision_config, k, v)
-    for k, v in asdict(get_adapeter_config(model_family)).items():
+    for k, v in asdict(get_adapeter_config(model_family, args.model_name)).items():
         setattr(adapter_config, k, v)
     # print(vision_config)
     setattr(language_config, "image_token_id", 151655)

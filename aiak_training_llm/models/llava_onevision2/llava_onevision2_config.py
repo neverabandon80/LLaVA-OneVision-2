@@ -17,6 +17,10 @@ class AdapterConfig:
     activation_func: torch.nn.Module = gelu
     add_bias_linear: bool = False
     layernorm_epsilon: float = 1e-06
+    use_patch_position_encoding: bool = False
+    patch_position_encoding_type: str = "absolute"
+    max_position_embeddings: int = 8192
+
 
 
 @dataclass
@@ -70,6 +74,25 @@ def llava_onevision2_layer1():
 @register_model_config(model_family=VisionLanguageModelFamilies.LLAVA_ONEVISION2, model_arch="llava-onevision2-2b")
 def llava_onevision2_2b():
     """llava-onevision2-2b"""
+    return LlavaOnevision2Config(
+        num_layers=28,
+        hidden_size=2048,
+        ffn_hidden_size=6144,
+        num_attention_heads=16,
+        group_query_attention=True,
+        num_query_groups=8,
+        vocab_size_in_config_file=151936,
+        make_vocab_size_divisible_by=128,
+        qk_layernorm=True,
+        kv_channels=128,
+        add_qkv_bias=False,
+        rotary_base=1000000,
+    )
+
+
+@register_model_config(model_family=VisionLanguageModelFamilies.LLAVA_ONEVISION2, model_arch="llava-onevision2-2b-pos")
+def llava_onevision2_2b_pos():
+    """llava-onevision2-2b-pos"""
     return LlavaOnevision2Config(
         num_layers=28,
         hidden_size=2048,
@@ -269,10 +292,13 @@ def get_vision_config(model_family, model_name):
     return config
 
 
-def get_adapeter_config(model_family):
+def get_adapeter_config(model_family, model_name=None):
     """get adapeter config"""
     config = AdapterConfig(
         normalization="LayerNorm",
         add_bias_linear=True,
     )
+    if model_name and model_name.endswith("-pos"):
+        config.use_patch_position_encoding = True
+        config.patch_position_encoding_type = "absolute"
     return config

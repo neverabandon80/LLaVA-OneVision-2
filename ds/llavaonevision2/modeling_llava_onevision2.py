@@ -272,6 +272,9 @@ class LlavaOnevision2VisionPatchMerger(nn.Module):
         context_dim: int,
         spatial_merge_size: int = 2,
         layer_norm_eps: float = 1e-05,
+        use_patch_position_encoding: bool = False,
+        patch_position_encoding_type: str = "absolute",
+        max_position_embeddings: int = 8192,
     ) -> None:
         super().__init__()
         self.hidden_size = context_dim * (spatial_merge_size**2)
@@ -282,8 +285,19 @@ class LlavaOnevision2VisionPatchMerger(nn.Module):
             nn.Linear(self.hidden_size, dim),
         )
         self.spatial_merge_size = spatial_merge_size
+        self.use_patch_position_encoding = use_patch_position_encoding
+        self.patch_position_encoding_type = patch_position_encoding_type
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.use_patch_position_encoding:
+            if self.patch_position_encoding_type != "absolute":
+                raise ValueError(
+                    f"Unknown patch_position_encoding_type: {self.patch_position_encoding_type}. "
+                    "Only 'absolute' is supported."
+                )
+            self.pos_emb_h = nn.Embedding(max_position_embeddings, dim)
+            self.pos_emb_w = nn.Embedding(max_position_embeddings, dim)
+
+    def forward(self, x: torch.Tensor, patch_positions: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Merge patches from Qwen2VL-style input.
 
@@ -298,8 +312,19 @@ class LlavaOnevision2VisionPatchMerger(nn.Module):
             Merged tensor of shape [batch_size, seq_len // spatial_merge_size^2, dim]
             or [seq_len // spatial_merge_size^2, dim]
         """
+        if patch_positions is not None and patch_positions.dim() == 3:
+            patch_positions = patch_positions.squeeze(0)
+
         x = self.ln_q(x).view(-1, self.hidden_size)
         x = self.mlp(x)
+
+        if self.use_patch_position_encoding and patch_positions is not None:
+            pp = patch_positions.view(-1, self.spatial_merge_size**2, 3)
+            pp = pp[:, 0, :]
+            pp = (pp // self.spatial_merge_size).long()
+
+            x = x + self.pos_emb_h(pp[:, 1]) + self.pos_emb_w(pp[:, 2])
+
         return x
 
 
@@ -871,6 +896,9 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
             context_dim=config.hidden_size,
             spatial_merge_size=config.spatial_merge_size,
             layer_norm_eps=config.layer_norm_eps,
+            use_patch_position_encoding=getattr(config, "use_patch_position_encoding", False),
+            patch_position_encoding_type=getattr(config, "patch_position_encoding_type", "absolute"),
+            max_position_embeddings=getattr(config, "max_position_embeddings", 8192),
         )
 
         self.post_init()
@@ -1116,7 +1144,7 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
             )
 
         # Patch merger: input patches are already in 2x2 block order from Qwen2VL processor
-        merged_output = self.merger(sequence_output)
+        merged_output = self.merger(sequence_output, patch_positions=patch_positions)
 
         if not return_dict:
             return (merged_output,) + (encoder_outputs.hidden_states if output_hidden_states else None,)
@@ -1231,7 +1259,7 @@ class LlavaOnevision2VisionPretrainedModel(LlavaOnevision2PreTrainedModel):
         output["before_adapter"] = sequence_output.clone()
 
         # Patch merger
-        merged_output = self.merger(sequence_output)
+        merged_output = self.merger(sequence_output, patch_positions=patch_positions)
         output["after_merger"] = merged_output.clone()
 
         return output

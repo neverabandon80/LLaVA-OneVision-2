@@ -44,7 +44,7 @@ def create_test_image():
     return img
 
 
-def load_empty_model(llm_path):
+def load_empty_model(llm_path, enable_patch_position_encoding=True):
     print("Loading tokenizer and processor from Qwen2.5-VL and empty model...")
     tokenizer = Qwen2Tokenizer.from_pretrained(
         "Qwen/Qwen2.5-VL-7B-Instruct", trust_remote_code=True, device_map={"": f"cuda:{CUDA_DEVICE}"}, use_fast=True
@@ -53,6 +53,8 @@ def load_empty_model(llm_path):
     processor.image_processor.temporal_patch_size = 1
     processor.image_processor.max_pixels = 2000 * 2000
     llava_onevision2_config = LlavaOnevision2Config()
+    llava_onevision2_config.vision_config.use_patch_position_encoding = enable_patch_position_encoding
+    llava_onevision2_config.vision_config.patch_position_encoding_type = "absolute"
     llm_config = AutoConfig.from_pretrained(llm_path, trust_remote_code=True, use_fast=True)
     llava_onevision2_config.text_config.update(llm_config.to_dict())
     llava_onevision2_config.text_config.tie_word_embeddings = False
@@ -215,6 +217,13 @@ def load_adapter_weights(model, adapter_path, cur_len):
         return new_state_dict
 
     adapter_weights = convert_state_dict(adapter_weights)
+    if not getattr(model.config.vision_config, "use_patch_position_encoding", False):
+        adapter_weights = {
+            key: value
+            for key, value in adapter_weights.items()
+            if not key.startswith("model.visual.merger.pos_emb_")
+        }
+
     adapter_keys = len(set(adapter_weights.keys()))
 
     # Load weights into model
@@ -795,7 +804,10 @@ def main(args):
     sample_text = args.sample_text
 
     # 1. load empty model
-    model, processor, tokenizer = load_empty_model(llm_path)
+    model, processor, tokenizer = load_empty_model(
+        llm_path,
+        enable_patch_position_encoding=args.enable_patch_position_encoding,
+    )
     model.to(dtype=torch.float32)
 
     print("Processor:", processor)
@@ -850,5 +862,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sample_text", type=str, default="Hello, my dog is cute", help="Sample text for LLM consistency check"
     )
+    parser.add_argument(
+        "--enable_patch_position_encoding",
+        dest="enable_patch_position_encoding",
+        action="store_true",
+        help="Enable patch position encoding in merged DS model.",
+    )
+    parser.add_argument(
+        "--disable_patch_position_encoding",
+        dest="enable_patch_position_encoding",
+        action="store_false",
+        help="Disable patch position encoding in merged DS model.",
+    )
+    parser.set_defaults(enable_patch_position_encoding=True)
     args = parser.parse_args()
     main(args)

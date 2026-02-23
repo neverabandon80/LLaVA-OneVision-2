@@ -27,6 +27,9 @@ class LlavaOnevision2VisionConfig(PretrainedConfig):
         tokens_per_second=1,
         temporal_patch_size=1,
         frame_windows_size=4,
+        use_patch_position_encoding=False,
+        patch_position_encoding_type="absolute",
+        max_position_embeddings=8192,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -49,6 +52,9 @@ class LlavaOnevision2VisionConfig(PretrainedConfig):
         self.tokens_per_second = tokens_per_second
         self.temporal_patch_size = temporal_patch_size
         self.frame_windows_size = frame_windows_size
+        self.use_patch_position_encoding = use_patch_position_encoding
+        self.patch_position_encoding_type = patch_position_encoding_type
+        self.max_position_embeddings = max_position_embeddings
 
 
 class LlavaOnevision2Config(PretrainedConfig):
