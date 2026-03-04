@@ -121,7 +121,19 @@ def get_batch(data_iterator):
     if has_image:
         imgs = tensor_parallel.broadcast_data(["imgs"], data, torch.float32)["imgs"]
         thw = tensor_parallel.broadcast_data(["image_grid_thw"], data, torch.int32)["image_grid_thw"]
-        if data is not None and "patch_positions" in data and data["patch_positions"] is not None:
+        # Synchronize whether patch_positions is available across all TP ranks.
+        # Only rank 0 of each TP group has `data`; other ranks have `data = None`.
+        # Using a collective (all_reduce MAX) ensures every rank agrees before
+        # deciding whether to call broadcast_data, preventing a collective mismatch
+        # that would otherwise corrupt the communication state and cause NaN loss.
+        has_pp = int(data is not None and "patch_positions" in data and data["patch_positions"] is not None)
+        has_pp_tensor = torch.tensor([has_pp], dtype=torch.int32, device=torch.cuda.current_device())
+        torch.distributed.all_reduce(
+            has_pp_tensor,
+            op=torch.distributed.ReduceOp.MAX,
+            group=mpu.get_tensor_model_parallel_group(),
+        )
+        if has_pp_tensor.item():
             patch_positions = tensor_parallel.broadcast_data(["patch_positions"], data, torch.int64)["patch_positions"]
     if has_video:
         pixel_values_videos = tensor_parallel.broadcast_data(["pixel_values_videos"], data, torch.float32)[
