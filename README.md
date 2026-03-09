@@ -87,6 +87,7 @@
 - [Quick Start with Hugging Face](#quick-start-with-huggingface)
 - [Evaluation](#evaluation)
 - [Quick Start For Training](#quick-start-guide)
+- [Unbalanced Pipeline Splitting](#unbalanced-pipeline-splitting-不均衡流水线切分)
 - [Fully Reproducing Guide](#fully-reproducing-guide)
 - [Citation](#citation)
 - [Acknowledgement](#acknowledgement)
@@ -337,6 +338,159 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 accelerate launch \
 --num_processes=4 --main_process_port 12399 -m lmms_eval --model=llava_onevision1_5 --batch_size=1 --tasks=mme \
 --model_args=pretrained=/workspace/LLaVA-OneVision-2/LLaVA-OneVision-1.5-4B-3M-Mid-Training-780K-Instruct,max_pixels=3240000
 ```
+
+## Unbalanced Pipeline Splitting (不均衡流水线切分)
+
+### Background
+
+LLaVA-OneVision-2 is a multimodal model that consists of three components placed across pipeline stages:
+
+- **Stage 0** – ViT encoder (24 transformer layers, ~300 M parameters) **plus** optionally a few LLM decoder layers
+- **Stage 1 … N-1** – the remaining LLM decoder layers
+
+Because the ViT encoder adds significant computation to stage 0, a naive uniform layer split would make stage 0 much heavier than the others, creating pipeline bubbles and lowering GPU utilisation.
+
+**Custom / unbalanced pipeline splitting** lets you specify exactly how many LLM layers each pipeline stage holds, so you can compensate for the extra ViT load on stage 0 by giving it fewer (or zero) LLM layers.
+
+### Parameters
+
+| Argument | Description |
+|---|---|
+| `--custom-pipeline-layers A,B,...` | Comma-separated LLM decoder layer counts per PP stage. Must have exactly `PP` elements; values must sum to the total number of LLM layers. |
+| `--custom-pipeline-recompute-layers A,B,...` | Comma-separated activation-recompute layer counts per PP stage. Must be used together with `--recompute-granularity full`. Replaces the global `--recompute-num-layers` with per-stage control. **On stage 0 the count covers the ViT transformer layers (24 total); on all other stages it covers the LLM decoder layers on that stage.** |
+
+> **Note on `--custom-pipeline-recompute-layers` stage 0:** Because stage 0 always hosts the ViT encoder (24 layers), the recompute budget for stage 0 applies to those ViT layers. For example, setting `12` for stage 0 means half of the ViT's 24 layers are recomputed. Stages 1+ cover the LLM layers assigned to that stage.
+
+### Recommended Configurations
+
+#### 2B model – 28 LLM layers, 24-layer ViT on stage 0
+
+| PP | `--custom-pipeline-layers` | `--custom-pipeline-recompute-layers` | Layout |
+|----|---------------------------|--------------------------------------|--------|
+| 2  | `12,16`    | `12,8`     | stage 0: ViT + 12 LLM layers; stage 1: 16 LLM layers |
+| 4  | `0,9,9,10` | `12,5,5,5` | stage 0: ViT only; stages 1-3 share the 28 LLM layers |
+
+#### 4B model – 36 LLM layers, 24-layer ViT on stage 0
+
+| PP | `--custom-pipeline-layers` | `--custom-pipeline-recompute-layers` | Layout |
+|----|---------------------------|--------------------------------------|--------|
+| 2  | `12,24`      | `12,12`    | stage 0: ViT + 12 LLM layers; stage 1: 24 LLM layers |
+| 3  | `0,18,18`    | `12,9,9`   | stage 0: ViT only; stages 1-2: 18 LLM layers each |
+| 4  | `0,12,12,12` | `12,6,6,6` | stage 0: ViT only; stages 1-3: 12 LLM layers each |
+
+#### 8B model – 36 LLM layers, 24-layer ViT on stage 0
+
+| PP | `--custom-pipeline-layers` | `--custom-pipeline-recompute-layers` | Layout |
+|----|---------------------------|--------------------------------------|--------|
+| 2  | `12,24`      | `12,12`    | stage 0: ViT + 12 LLM layers; stage 1: 24 LLM layers |
+| 3  | `0,18,18`    | `12,9,9`   | stage 0: ViT only; stages 1-2: 18 LLM layers each |
+| 4  | `0,12,12,12` | `12,6,6,6` | stage 0: ViT only; stages 1-3: 12 LLM layers each |
+
+### Training Script Example (4B, TP=1 PP=2)
+
+The key training arguments for an unbalanced PP=2 run on the 4B model:
+
+```bash
+TRAINING_ARGS=(
+    ...
+    # Unbalanced layer split: stage-0 holds ViT (24 layers) + 12 LLM layers,
+    # stage-1 holds the remaining 24 LLM layers.
+    --custom-pipeline-layers 12,24
+
+    # Per-stage activation recompute budget:
+    #   stage 0 → 12 out of 24 ViT layers  (ViT has 24 layers)
+    #   stage 1 → 12 out of 24 LLM layers
+    --custom-pipeline-recompute-layers 12,12  # ViT 24layers
+
+    --recompute-granularity full
+    --recompute-method uniform
+    ...
+)
+
+MODEL_PARALLEL_ARGS=(
+    --pipeline-model-parallel-size 2   # PP=2
+    --tensor-model-parallel-size  1   # TP=1
+    ...
+)
+```
+
+For PP=3 (stage 0 holds ViT only, stages 1-2 each hold 18 LLM layers):
+
+```bash
+TRAINING_ARGS=(
+    ...
+    --custom-pipeline-layers 0,18,18
+
+    # stage 0 → 12 out of 24 ViT layers  (ViT 24layers)
+    # stage 1 → 9 out of 18 LLM layers
+    # stage 2 → 9 out of 18 LLM layers
+    --custom-pipeline-recompute-layers 12,9,9  # ViT 24layers
+
+    --recompute-granularity full
+    --recompute-method uniform
+    ...
+)
+```
+
+### Checkpoint Conversion with Custom Pipeline Layers
+
+The conversion scripts accept the layer split as a positional argument. You must pass the **same** `CUSTOM_PIPELINE_LAYERS` value that was used (or will be used) during training.
+
+#### HuggingFace → Megatron-Core
+
+```bash
+# 2B  TP=1 PP=2  (custom split 12,16)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_2b_hf_to_mcore.sh \
+    /path/to/hf_checkpoint  /path/to/mcore_tp1_pp2  1 2 12,16
+
+# 2B  TP=1 PP=4  (custom split 0,9,9,10)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_2b_hf_to_mcore.sh \
+    /path/to/hf_checkpoint  /path/to/mcore_tp1_pp4  1 4 0,9,9,10
+
+# 4B  TP=1 PP=2  (custom split 12,24)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_4b_hf_to_mcore.sh \
+    /path/to/hf_checkpoint  /path/to/mcore_tp1_pp2  1 2 12,24
+
+# 4B  TP=1 PP=4  (custom split 0,12,12,12)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_4b_hf_to_mcore.sh \
+    /path/to/hf_checkpoint  /path/to/mcore_tp1_pp4  1 4 0,12,12,12
+
+# 8B  TP=2 PP=4  (custom split 0,12,12,12)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_8b_hf_to_mcore.sh \
+    /path/to/hf_checkpoint  /path/to/mcore_tp2_pp4  2 4 0,12,12,12
+```
+
+#### Megatron-Core → HuggingFace
+
+```bash
+# 2B  TP=1 PP=2  (custom split 12,16)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_2b_mcore_to_hf.sh \
+    /path/to/mcore_tp1_pp2/iter_XXXXXXX  /path/to/hf_output  1 2 12,16
+
+# 4B  TP=1 PP=2  (custom split 12,24)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_4b_mcore_to_hf.sh \
+    /path/to/mcore_tp1_pp2/iter_XXXXXXX  /path/to/hf_output  1 2 12,24
+
+# 4B  TP=1 PP=4  (custom split 0,12,12,12)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_4b_mcore_to_hf.sh \
+    /path/to/mcore_tp1_pp4/iter_XXXXXXX  /path/to/hf_output  1 4 0,12,12,12
+
+# 8B  TP=2 PP=4  (custom split 0,12,12,12)
+AIAK_TRAINING_PATH=/workspace/LLaVA-OneVision-2 \
+bash examples/llava_onevision2/convert/convert_8b_mcore_to_hf.sh \
+    /path/to/mcore_tp2_pp4/iter_XXXXXXX  /path/to/hf_output  2 4 0,12,12,12
+```
+
+> [!NOTE]
+> The `CUSTOM_PIPELINE_LAYERS` passed to the conversion script must exactly match the value used when the checkpoint was originally saved. A mismatch will cause incorrect weight loading.
 
 ## Fully Reproducing Guide
 
