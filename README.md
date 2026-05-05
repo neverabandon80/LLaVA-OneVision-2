@@ -158,56 +158,56 @@ Thanks so much to all of our amazing contributors!
 		<tr>
             <td align="center">
                 <a href="https://github.com/anxiangsir">
-                    <img src="https://avatars.githubusercontent.com/u/31175974?v=4" width="80" height="80" alt="anxiangsir"/>
+                    <img src="https://avatars.githubusercontent.com/u/31175974?s=80&v=4" width="80" height="80" alt="anxiangsir"/>
                     <br />
                     <sub><b>anxiangsir</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/yiyexy">
-                    <img src="https://avatars.githubusercontent.com/u/35927125?v=4" width="80" height="80" alt="yiyexy"/>
+                    <img src="https://avatars.githubusercontent.com/u/35927125?s=80&v=4" width="80" height="80" alt="yiyexy"/>
                     <br />
                     <sub><b>yiyexy</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/fdcp">
-                    <img src="https://avatars.githubusercontent.com/u/15667917?v=4" width="80" height="80" alt="fdcp"/>
+                    <img src="https://avatars.githubusercontent.com/u/15667917?s=80&v=4" width="80" height="80" alt="fdcp"/>
                     <br />
                     <sub><b>fdcp</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/wideyard">
-                    <img src="https://avatars.githubusercontent.com/u/101321826?v=4" width="80" height="80" alt="wideyard"/>
+                    <img src="https://avatars.githubusercontent.com/u/101321826?s=80&v=4" width="80" height="80" alt="wideyard"/>
                     <br />
                     <sub><b>wideyard</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/Lornatang">
-                    <img src="https://avatars.githubusercontent.com/u/31124350?v=4" width="80" height="80" alt="Lornatang"/>
+                    <img src="https://avatars.githubusercontent.com/u/31124350?s=80&v=4" width="80" height="80" alt="Lornatang"/>
                     <br />
                     <sub><b>Lornatang</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/chengzheng345">
-                    <img src="https://avatars.githubusercontent.com/u/209475443?v=4" width="80" height="80" alt="chengzheng345"/>
+                    <img src="https://avatars.githubusercontent.com/u/209475443?s=80&v=4" width="80" height="80" alt="chengzheng345"/>
                     <br />
                     <sub><b>chengzheng345</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/Luodian">
-                    <img src="https://avatars.githubusercontent.com/u/15847405?v=4" width="80" height="80" alt="Luodian"/>
+                    <img src="https://avatars.githubusercontent.com/u/15847405?s=80&v=4" width="80" height="80" alt="Luodian"/>
                     <br />
                     <sub><b>Luodian</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/kcz358">
-                    <img src="https://avatars.githubusercontent.com/u/92624596?v=4" width="80" height="80" alt="kcz358"/>
+                    <img src="https://avatars.githubusercontent.com/u/92624596?s=80&v=4" width="80" height="80" alt="kcz358"/>
                     <br />
                     <sub><b>kcz358</b></sub>
                 </a>
@@ -216,56 +216,56 @@ Thanks so much to all of our amazing contributors!
 		<tr>
             <td align="center">
                 <a href="https://github.com/killTheHostage">
-                    <img src="https://avatars.githubusercontent.com/u/16442720?v=4" width="80" height="80" alt="killTheHostage"/>
+                    <img src="https://avatars.githubusercontent.com/u/16442720?s=80&v=4" width="80" height="80" alt="killTheHostage"/>
                     <br />
                     <sub><b>killTheHostage</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/mathCrazyy">
-                    <img src="https://avatars.githubusercontent.com/u/20607153?v=4" width="80" height="80" alt="mathCrazyy"/>
+                    <img src="https://avatars.githubusercontent.com/u/20607153?s=80&v=4" width="80" height="80" alt="mathCrazyy"/>
                     <br />
                     <sub><b>mathCrazyy</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/wkzhang636">
-                    <img src="https://avatars.githubusercontent.com/u/194186498?v=4" width="80" height="80" alt="wkzhang636"/>
+                    <img src="https://avatars.githubusercontent.com/u/194186498?s=80&v=4" width="80" height="80" alt="wkzhang636"/>
                     <br />
                     <sub><b>wkzhang636</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/yunglechao">
-                    <img src="https://avatars.githubusercontent.com/u/7631185?v=4" width="80" height="80" alt="yunglechao"/>
+                    <img src="https://avatars.githubusercontent.com/u/7631185?s=80&v=4" width="80" height="80" alt="yunglechao"/>
                     <br />
                     <sub><b>yunglechao</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/RobitYadda">
-                    <img src="https://avatars.githubusercontent.com/u/6811311?v=4" width="80" height="80" alt="RobitYadda"/>
+                    <img src="https://avatars.githubusercontent.com/u/6811311?s=80&v=4" width="80" height="80" alt="RobitYadda"/>
                     <br />
                     <sub><b>RobitYadda</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/fengshikun">
-                    <img src="https://avatars.githubusercontent.com/u/2499990?v=4" width="80" height="80" alt="fengshikun"/>
+                    <img src="https://avatars.githubusercontent.com/u/2499990?s=80&v=4" width="80" height="80" alt="fengshikun"/>
                     <br />
                     <sub><b>fengshikun</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/GeoffreyChen777">
-                    <img src="https://avatars.githubusercontent.com/u/14183213?v=4" width="80" height="80" alt="GeoffreyChen777"/>
+                    <img src="https://avatars.githubusercontent.com/u/14183213?s=80&v=4" width="80" height="80" alt="GeoffreyChen777"/>
                     <br />
                     <sub><b>GeoffreyChen777</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/didizhu-judy">
-                    <img src="https://avatars.githubusercontent.com/u/34787894?v=4" width="80" height="80" alt="didizhu-judy"/>
+                    <img src="https://avatars.githubusercontent.com/u/34787894?s=80&v=4" width="80" height="80" alt="didizhu-judy"/>
                     <br />
                     <sub><b>didizhu-judy</b></sub>
                 </a>
@@ -274,35 +274,35 @@ Thanks so much to all of our amazing contributors!
 		<tr>
             <td align="center">
                 <a href="https://github.com/yshenaw">
-                    <img src="https://avatars.githubusercontent.com/u/45809710?v=4" width="80" height="80" alt="yshenaw"/>
+                    <img src="https://avatars.githubusercontent.com/u/45809710?s=80&v=4" width="80" height="80" alt="yshenaw"/>
                     <br />
                     <sub><b>yshenaw</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/Yangsenqiao">
-                    <img src="https://avatars.githubusercontent.com/u/73487993?v=4" width="80" height="80" alt="Yangsenqiao"/>
+                    <img src="https://avatars.githubusercontent.com/u/73487993?s=80&v=4" width="80" height="80" alt="Yangsenqiao"/>
                     <br />
                     <sub><b>Yangsenqiao</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/YunyaoYan">
-                    <img src="https://avatars.githubusercontent.com/u/109638667?v=4" width="80" height="80" alt="YunyaoYan"/>
+                    <img src="https://avatars.githubusercontent.com/u/109638667?s=80&v=4" width="80" height="80" alt="YunyaoYan"/>
                     <br />
                     <sub><b>YunyaoYan</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/FeilongTangmonash">
-                    <img src="https://avatars.githubusercontent.com/u/152372878?v=4" width="80" height="80" alt="FeilongTangmonash"/>
+                    <img src="https://avatars.githubusercontent.com/u/152372878?s=80&v=4" width="80" height="80" alt="FeilongTangmonash"/>
                     <br />
                     <sub><b>FeilongTangmonash</b></sub>
                 </a>
             </td>
             <td align="center">
                 <a href="https://github.com/Jinghao-Guo">
-                    <img src="https://avatars.githubusercontent.com/u/212396229?v=4" width="80" height="80" alt="Jinghao-Guo"/>
+                    <img src="https://avatars.githubusercontent.com/u/212396229?s=80&v=4" width="80" height="80" alt="Jinghao-Guo"/>
                     <br />
                     <sub><b>Jinghao-Guo</b></sub>
                 </a>
