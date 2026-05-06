@@ -353,7 +353,7 @@ def _add_extra_training_args(parser: argparse.ArgumentParser):
 
     group.add_argument('--load-ema', type=str, default=None,
                        help='Directory containing a ema checkpoint, default to ${args.load}/ema')
-    
+
     group.add_argument('--ckpt-format', default='torch',
                        choices=['torch', 'torch_dist', 'zarr'],
                        help='Checkpoint format to use. Default: torch')
@@ -361,6 +361,12 @@ def _add_extra_training_args(parser: argparse.ArgumentParser):
                     help=">0 启用局部长度池化排序；推荐为 batch_size 的 10~50 倍")
     group.add_argument("--length-sort-desc", action="store_true",
                     help="按长度从长到短")
+    group.add_argument("--length-sort-separate-packed", action="store_true",
+                    help="分离 packed/non-packed 样本独立排序，减少跨 rank 计算量差异")
+    group.add_argument("--length-sort-warmup-steps", type=int, default=50,
+                    help="pool flush 次数达到此值前线性增大 pool_size；0 禁用 warmup")
+    group.add_argument("--length-sort-initial-pool-size", type=int, default=2,
+                    help="warmup 起始 pool_size（默认 10）")
 
     return parser
 
@@ -379,19 +385,16 @@ def _add_extra_multimodal_args(parser):
     group.add_argument('--trainable-modules', default=['all'], nargs='*',
                        help='choices: all, language_model, adapter, vision_model, '
                             'language_expert_linear, vision_expert_linear'),
-    
+
     group.add_argument("--dataloader-save", type=str, default=None,
                        help="Energon dataloader state save path")
 
     group.add_argument("--packing-pretrain-data", action='store_true',
                        help="Whether to pack multiple pretrain data into one.")
-    
+
     group.add_argument("--add-question-in-pretrain", action="store_true",
                        help="Whether add question in pretrain VQASample")
 
-    # use for qwen2vl now
-    group.add_argument('--image-resolution', type=int,
-                       help='Resolution of image inputs')
     group.add_argument('--min-pixels', type=int, default=4 * 28 * 28,
                        help='Minimum image pixels')
 
@@ -421,7 +424,7 @@ def _add_extra_multimodal_args(parser):
 def _add_extra_parallel_args(parser):
     """Add parallel arguments"""
     group = parser.add_argument_group(title='extra-parallel')
-    
+
     # NOTE：In order to be compatible with the old version of AIAK,
     # --context-parallel-ulysses-degree temporarily retained.
     group.add_argument('--context-parallel-ulysses-degree', type=int, default=1,
@@ -514,7 +517,7 @@ def _validate_extra_sft_args(args):
                 print_rank_0("WARNING: Setting args.cp_comm_type to p2p since ring attention "
                              "does not support all gather while packing_sft_data is enabled",
                              args.rank)
-                
+
         # check if the model is supported
         if args.multi_latent_attention:
             if not args.enable_fa_within_mla:

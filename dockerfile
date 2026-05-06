@@ -22,6 +22,10 @@ COPY requirements.txt /workspace/requirements.txt
 RUN pip install --no-cache-dir -i ${PYPI_MIRROR} \
     ${PIP_EXTRA_INDEX_URL:+--extra-index-url ${PIP_EXTRA_INDEX_URL}} \
     -r /workspace/requirements.txt
+
+# Remove nvidia-modelopt to avoid from_pretrained interference
+RUN pip uninstall -y nvidia-modelopt || true
+
 RUN rm -r /workspace/requirements.txt /workspace/README.md /workspace/docker-examples /workspace/license.txt /workspace/tutorials
 
 

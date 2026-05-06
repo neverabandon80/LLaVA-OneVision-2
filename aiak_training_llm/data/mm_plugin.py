@@ -1,31 +1,25 @@
-"""
-Copyright 2024 the LlamaFactory team.
-Copyright (c) 2024, AIAK team. All rights reserved.
-This code was adopted from https://github.com/hiyouga/LLaMA-Factory
-and the source code is licensed under the Apache license found in the
-LICENSE file in the root directory of this source tree.
-"""
-
 import math
 from copy import deepcopy
 from io import BytesIO
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple, TypedDict, Union, Type
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple, Type, TypedDict, Union
 
 import numpy as np
-from transformers.image_utils import get_image_size, to_numpy_array
+from PIL import Image
+from PIL.Image import Image as ImageObject
 from typing_extensions import override
 
 from aiak_training_llm.utils.constants import Placeholder
-
-from PIL import Image
-from PIL.Image import Image as ImageObject
+from transformers.image_utils import get_image_size, to_numpy_array
 
 
 if TYPE_CHECKING:
     import torch
+
     from transformers.image_processing_utils import BaseImageProcessor
+
     class EncodedImage(TypedDict):
-        """ Encoded image type. """
+        """Encoded image type."""
+
         path: Optional[str]
         bytes: Optional[bytes]
 
@@ -34,7 +28,8 @@ if TYPE_CHECKING:
 
 
 class MMPlugin:
-    """ MM Plugin """
+    """MM Plugin"""
+
     def __init__(self, image_token: Optional[str], video_token: Optional[str]) -> None:
         self.image_token = image_token
         self.video_token = video_token
@@ -57,11 +52,11 @@ class MMPlugin:
         r"""
         Pre-processes a single image.
         """
-        image_resolution: int = kwargs.get("image_resolution")
-        if max(image.width, image.height) > image_resolution:
-            resize_factor = image_resolution / max(image.width, image.height)
-            width, height = int(image.width * resize_factor), int(image.height * resize_factor)
-            image = image.resize((width, height), resample=Image.NEAREST)
+        # image_resolution: int = kwargs.get("image_resolution")
+        # if max(image.width, image.height) > image_resolution:
+        #     resize_factor = image_resolution / max(image.width, image.height)
+        #     width, height = int(image.width * resize_factor), int(image.height * resize_factor)
+        #     image = image.resize((width, height), resample=Image.NEAREST)
 
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -100,7 +95,6 @@ class MMPlugin:
 
         return results
 
-
     def _get_mm_inputs(
         self,
         images: Sequence["ImageInput"],
@@ -125,7 +119,7 @@ class MMPlugin:
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_resolution=getattr(processor, "image_resolution", 512),
+                # image_resolution=getattr(processor, "image_resolution", 512),
             )
             input_dict["images"] = images
 
@@ -173,7 +167,8 @@ class MMPlugin:
 
 
 class Qwen2VLPlugin(MMPlugin):
-    """ Qwen2VL plugin """
+    """Qwen2VL plugin"""
+
     @override
     def _preprocess_image(self, image: "ImageObject", **kwargs) -> "ImageObject":
         image = super()._preprocess_image(image, **kwargs)
@@ -211,14 +206,47 @@ class Qwen2VLPlugin(MMPlugin):
         mm_inputs = self._get_mm_inputs(images, videos, processor)
         image_grid_thw = mm_inputs.get("image_grid_thw", [])
         video_grid_thw = mm_inputs.get("video_grid_thw", [])
+        actual_num_images = len(image_grid_thw)
 
         num_image_tokens, num_video_tokens = 0, 0
         messages = deepcopy(messages)
+
+        image_placeholder_count = sum(message["content"].count(Placeholder.IMAGE) for message in messages)
+        video_placeholder_count = sum(message["content"].count(Placeholder.VIDEO) for message in messages)
+
+        if actual_num_images > 0 and image_placeholder_count != actual_num_images:
+            for message in messages:
+                message["content"] = message["content"].replace(Placeholder.IMAGE, "")
+
+            first_user_msg = None
+            for message in messages:
+                if message.get("role") == "user":
+                    first_user_msg = message
+                    break
+
+            if first_user_msg is None:
+                raise ValueError("Cannot rebuild image placeholders: no user message found.")
+
+            image_placeholders = "\n".join([Placeholder.IMAGE] * actual_num_images)
+            user_content = first_user_msg["content"].lstrip("\n")
+            first_user_msg["content"] = "{}\n{}".format(image_placeholders, user_content)
+
+        if len(videos) > 0 and video_placeholder_count == 0:
+            raise ValueError("Found video inputs but no {} token in messages.".format(Placeholder.VIDEO))
+        if video_placeholder_count > 0 and video_placeholder_count != len(videos):
+            raise ValueError(
+                "Found {} video(s) but {} {} token(s) in messages.".format(
+                    len(videos), video_placeholder_count, Placeholder.VIDEO
+                )
+            )
+
         for message in messages:
             content = message["content"]
             while Placeholder.IMAGE in content:
-                if num_image_tokens > len(image_grid_thw):
-                    raise ValueError("`len(images)` is less than the number of {} tokens.".format(Placeholder.IMAGE))
+                if num_image_tokens >= actual_num_images:
+                    raise ValueError(
+                        "The number of {} tokens is greater than available images.".format(Placeholder.IMAGE)
+                    )
 
                 content = content.replace(
                     Placeholder.IMAGE,
@@ -230,7 +258,7 @@ class Qwen2VLPlugin(MMPlugin):
                 num_image_tokens += 1
 
             while Placeholder.VIDEO in content:
-                if num_video_tokens > len(video_grid_thw):
+                if num_video_tokens >= len(video_grid_thw):
                     raise ValueError("`len(videos)` is less than the number of {} tokens.".format(Placeholder.VIDEO))
 
                 content = content.replace(
@@ -244,7 +272,7 @@ class Qwen2VLPlugin(MMPlugin):
 
             message["content"] = content
 
-        if len(images) != num_image_tokens:
+        if actual_num_images != num_image_tokens:
             raise ValueError("The number of images does not match the number of {} tokens".format(Placeholder.IMAGE))
 
         if len(videos) != num_video_tokens:

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>VSI-590k Packed Visualizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">▦</span>
+    <span class="title">VSI-590k <span class="muted">packed webdataset viewer</span></span>
+  </div>
+  <div class="nav">
+    <label>shard
+      <select id="shard-sel"></select>
+    </label>
+    <label>packed sample
+      <select id="key-sel"></select>
+    </label>
+    <label>sub-sample
+      <select id="sub-sel"></select>
+    </label>
+    <button id="prev-sub" title="prev sub-sample">◀</button>
+    <button id="next-sub" title="next sub-sample">▶</button>
+    <button id="prev-key" title="prev packed sample">⏮</button>
+    <button id="next-key" title="next packed sample">⏭</button>
+    <span id="status" class="status"></span>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="meta-panel" id="meta-panel">
+    <div class="panel-title">metadata</div>
+    <div id="meta-body" class="meta-body"></div>
+  </aside>
+
+  <section class="content">
+    <div class="section-title">Q / A turns <span id="turn-count" class="badge"></span></div>
+    <div id="dialog" class="dialog"></div>
+
+    <div class="section-title">Frames <span id="frame-count" class="badge"></span>
+      <span class="meta-inline" id="frame-meta-inline"></span>
+    </div>
+    <div class="grid-controls">
+      <label>thumb size
+        <input type="range" id="size-range" min="60" max="240" value="120" />
+        <span id="size-val">120</span>px
+      </label>
+      <label><input type="checkbox" id="show-ts" checked /> timestamps</label>
+      <label><input type="checkbox" id="show-patch" checked /> highlight patch frames</label>
+    </div>
+    <div id="frames" class="frames"></div>
+  </section>
+</main>
+
+<dialog id="zoom"><img id="zoom-img" /><div id="zoom-cap" class="zoom-cap"></div></dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
