@@ -3916,3 +3916,80 @@
 .method-figure-svg .pframe-border {
   stroke: var(--svg-text-faint);
 }
+
+/* --- Video Manipulation slide additions --- */
+.demo-slide-video-hero {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: .65rem;
+  overflow: hidden;
+  margin: 0 auto;
+  max-width: 600px;
+  aspect-ratio: 4 / 3;
+}
+.demo-slide-video-hero video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: pointer;
+}
+[data-theme="dark"] .demo-slide-video-hero { background: #0f172a; }
+.demo-slide-trajectories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .55rem;
+  margin-top: .6rem;
+}
+.demo-slide-trajectories figure {
+  margin: 0;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 4 / 3;
+}
+.demo-slide-trajectories img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.demo-slide-trajectories figcaption {
+  position: absolute;
+  top: 8px; left: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  background: rgba(15, 23, 42, .82);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+}
+[data-theme="dark"] .demo-slide-trajectories figure { background: #0f172a; }
+
+/* --- Temporal Grounding chat additions --- */
+.tg-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: #cbd5e1;
+}
+.tg-placeholder svg { opacity: .5; }
+.tg-placeholder span {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  opacity: .8;
+}

@@ -2842,11 +2842,12 @@ print(processor.batch_decode(out, skip_special_tokens=True)[0])
           </h3>
           <p class="demo-pane-intro">
             <span class="i18n" data-lang="en">
-              Qualitative results across two of LLaVA-OneVision-2&rsquo;s downstream capabilities &mdash;
-              referring video segmentation &amp; tracking, and 2D / 3D spatial grounding.
+              Qualitative results across four of LLaVA-OneVision-2&rsquo;s downstream capabilities &mdash;
+              referring video segmentation &amp; tracking, spatial grounding, real-world video manipulation,
+              and temporal grounding.
             </span>
             <span class="i18n" data-lang="zh">
-              LLaVA-OneVision-2 在两类下游能力上的定性结果——指称视频分割与跟踪，以及 2D / 3D 空间定位。
+              LLaVA-OneVision-2 在四类下游能力上的定性结果——指称视频分割与跟踪、空间定位、真实世界视频操作，以及时序定位。
             </span>
           </p>
 
@@ -2859,6 +2860,14 @@ print(processor.batch_decode(out, skip_special_tokens=True)[0])
               <button type="button" class="demo-tab" data-demo-tab="spatial" role="tab" aria-selected="false">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.5 8 12 8 12s8-6.5 8-12a8 8 0 0 0-8-8z"/></svg>
                 <span class="i18n" data-lang="en">Spatial Grounding</span><span class="i18n" data-lang="zh">空间定位</span>
+              </button>
+              <button type="button" class="demo-tab" data-demo-tab="manipulation" role="tab" aria-selected="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M6 7 C 10 9, 12 14, 18 17"/></svg>
+                <span class="i18n" data-lang="en">Video Manipulation</span><span class="i18n" data-lang="zh">视频操作</span>
+              </button>
+              <button type="button" class="demo-tab" data-demo-tab="temporal" role="tab" aria-selected="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 15 14"/></svg>
+                <span class="i18n" data-lang="en">Temporal Grounding</span><span class="i18n" data-lang="zh">时序定位</span>
               </button>
             </div>
 
@@ -3279,6 +3288,363 @@ print(processor.batch_decode(out, skip_special_tokens=True)[0])
                     </div>
                     <span class="demo-carousel-counter"><strong>1</strong> / 5</span>
                   </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Video Manipulation pane -->
+            <div class="demo-pane" id="demo-pane-manipulation" role="tabpanel">
+              <p class="demo-pane-intro">
+                <span class="i18n" data-lang="en">
+                  Given a natural-language manipulation instruction and the current RGB observation,
+                  LLaVA-OneVision-2 emits a sequence of <strong>(x, y, z)</strong> waypoints; a downstream
+                  IK module consumes them to drive the end-effector. The execution video shows the
+                  resulting rollout; the snapshots below show the model&rsquo;s predicted trajectory at
+                  each query timestep&mdash;the trajectory shortens as the gripper approaches the
+                  target and refreshes when the scene state changes.
+                </span>
+                <span class="i18n" data-lang="zh">
+                  给定自然语言操作指令和当前 RGB 观测，LLaVA-OneVision-2 输出图像空间中的
+                  <strong>(x, y, z)</strong> 路径点序列；下游 IK 模块据此驱动末端执行器。
+                  执行视频展示了实际完成的动作；下方快照展示了模型在每次重询时刻预测的轨迹——
+                  夹爪靠近目标时轨迹自动收缩，场景状态变化（如烤箱门打开）时轨迹自动刷新。
+                </span>
+              </p>
+
+              <div class="demo-carousel" data-demo-carousel>
+                <button type="button" class="demo-carousel-arrow demo-carousel-arrow-prev" data-demo-prev aria-label="Previous example">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button type="button" class="demo-carousel-arrow demo-carousel-arrow-next" data-demo-next aria-label="Next example">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <div class="demo-carousel-viewport">
+                  <div class="demo-carousel-track">
+                    <article class="demo-slide" data-slide="0">
+                      <div class="demo-slide-prompt-row">
+                        <span class="demo-slide-prompt-label">MANIPULATION</span>
+                        <p class="demo-slide-prompt">Put the apple on the green plate placed on the table.</p>
+                        <span class="demo-slide-tag">demo&nbsp;01</span>
+                      </div>
+                      <div class="demo-slide-video-hero">
+                        <video muted loop playsinline controls preload="metadata">
+                          <source src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/1/original.mp4" type="video/mp4">
+                        </video>
+                      </div>
+                      <div class="demo-slide-trajectories">
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/1/traj_0s.png" alt="trajectory at t=0s" loading="lazy">
+                          <figcaption>t = 0 s · 9 wpts</figcaption>
+                        </figure>
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/1/traj_10s.png" alt="trajectory at t=10s" loading="lazy">
+                          <figcaption>t = 10 s · 7 wpts</figcaption>
+                        </figure>
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/1/traj_11s.png" alt="trajectory at t=11s" loading="lazy">
+                          <figcaption>t = 11 s · 6 wpts</figcaption>
+                        </figure>
+                      </div>
+                    </article>
+                    <article class="demo-slide" data-slide="1">
+                      <div class="demo-slide-prompt-row">
+                        <span class="demo-slide-prompt-label">MANIPULATION</span>
+                        <p class="demo-slide-prompt">Put the bread into the oven.</p>
+                        <span class="demo-slide-tag">demo&nbsp;02</span>
+                      </div>
+                      <div class="demo-slide-video-hero">
+                        <video muted loop playsinline controls preload="metadata">
+                          <source src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/2/original.mp4" type="video/mp4">
+                        </video>
+                      </div>
+                      <div class="demo-slide-trajectories">
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/2/traj_0s.png" alt="trajectory at t=0s" loading="lazy">
+                          <figcaption>t = 0 s · 5 wpts</figcaption>
+                        </figure>
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/2/traj_7s.png" alt="trajectory at t=7s" loading="lazy">
+                          <figcaption>t = 7 s · 3 wpts</figcaption>
+                        </figure>
+                        <figure>
+                          <img src="https://cdn.jsdelivr.net/gh/anxiangsir/ov2_asset@main/demo/video_manipulation/2/traj_13s.png" alt="trajectory at t=13s" loading="lazy">
+                          <figcaption>t = 13 s · 5 wpts</figcaption>
+                        </figure>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+                <div class="demo-carousel-nav">
+                  <div class="demo-carousel-dots">
+                    <button type="button" class="demo-carousel-dot active" data-go="0" aria-label="Go to example 1"></button>
+                    <button type="button" class="demo-carousel-dot" data-go="1" aria-label="Go to example 2"></button>
+                  </div>
+                  <span class="demo-carousel-counter"><strong>1</strong> / 2</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Temporal Grounding pane -->
+            <div class="demo-pane" id="demo-pane-temporal" role="tabpanel">
+              <p class="demo-pane-intro">
+                <span class="i18n" data-lang="en">
+                  Given a free-form natural-language query and a video, LLaVA-OneVision-2 localises the
+                  corresponding time interval. The model&rsquo;s predicted segment and the ground-truth
+                  segment are shown side by side. Example 1 is from Charades-STA; examples 2&ndash;5
+                  are from QVHighlights.
+                </span>
+                <span class="i18n" data-lang="zh">
+                  给定自由形式的自然语言查询和一段视频，LLaVA-OneVision-2 定位对应的时间区间。
+                  模型预测的片段与真值片段并排显示。例 1 来自 Charades-STA，例 2&ndash;5 来自 QVHighlights。
+                </span>
+              </p>
+
+              <div class="demo-carousel" data-demo-carousel>
+                <button type="button" class="demo-carousel-arrow demo-carousel-arrow-prev" data-demo-prev aria-label="Previous example">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <button type="button" class="demo-carousel-arrow demo-carousel-arrow-next" data-demo-next aria-label="Next example">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <div class="demo-carousel-viewport">
+                  <div class="demo-carousel-track">
+                    <article class="demo-slide" data-slide="0">
+                      <div class="demo-chat">
+                        <div class="demo-chat-turn demo-chat-turn-user">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-user">You</div>
+                            <span class="demo-chat-author-label">demo&nbsp;01</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-user">
+                            <p class="demo-chat-prompt">Person drinking a glass of water.</p>
+                            <div class="demo-chat-rgb">
+                              <div class="tg-placeholder">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                <span>video placeholder</span>
+                              </div>
+                              <span class="demo-chat-vlabel">VIDEO</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="demo-chat-turn demo-chat-turn-model">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-model"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c0-3 2-6 6-6 3 0 5 1 8 0l4-3-1 6c0 4-3 7-7 7-3 0-5-1-7-3l-3 4 0-5z"/><circle cx="15" cy="10" r=".7" fill="currentColor"/></svg></div>
+                            <span class="demo-chat-author-label">LLaVA-OneVision-2</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-model">
+<pre class="demo-chat-code"><span class="t">&lt;temporal </span><span class="a">span=</span><span class="s">&quot;13.7 19.8&quot;</span><span class="t">&gt;</span>
+<span class="x">person drinking a glass of water</span>
+<span class="t">&lt;/temporal&gt;</span></pre>
+                            <div class="demo-chat-videos">
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">PREDICTION</span>
+                              </div>
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">GROUND TRUTH</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="demo-slide" data-slide="1">
+                      <div class="demo-chat">
+                        <div class="demo-chat-turn demo-chat-turn-user">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-user">You</div>
+                            <span class="demo-chat-author-label">demo&nbsp;02</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-user">
+                            <p class="demo-chat-prompt">A man talks to the camera whilst walking along a roadside in a rural area.</p>
+                            <div class="demo-chat-rgb">
+                              <div class="tg-placeholder">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                <span>video placeholder</span>
+                              </div>
+                              <span class="demo-chat-vlabel">VIDEO</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="demo-chat-turn demo-chat-turn-model">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-model"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c0-3 2-6 6-6 3 0 5 1 8 0l4-3-1 6c0 4-3 7-7 7-3 0-5-1-7-3l-3 4 0-5z"/><circle cx="15" cy="10" r=".7" fill="currentColor"/></svg></div>
+                            <span class="demo-chat-author-label">LLaVA-OneVision-2</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-model">
+<pre class="demo-chat-code"><span class="t">&lt;temporal </span><span class="a">span=</span><span class="s">&quot;0.0 18.4&quot;</span><span class="t">&gt;</span>
+<span class="x">a man talks to the camera whilst walking along a roadside in a rural area</span>
+<span class="t">&lt;/temporal&gt;</span></pre>
+                            <div class="demo-chat-videos">
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">PREDICTION</span>
+                              </div>
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">GROUND TRUTH</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="demo-slide" data-slide="2">
+                      <div class="demo-chat">
+                        <div class="demo-chat-turn demo-chat-turn-user">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-user">You</div>
+                            <span class="demo-chat-author-label">demo&nbsp;03</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-user">
+                            <p class="demo-chat-prompt">Blonde woman in black sweatshirt sits in a parked car.</p>
+                            <div class="demo-chat-rgb">
+                              <div class="tg-placeholder">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                <span>video placeholder</span>
+                              </div>
+                              <span class="demo-chat-vlabel">VIDEO</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="demo-chat-turn demo-chat-turn-model">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-model"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c0-3 2-6 6-6 3 0 5 1 8 0l4-3-1 6c0 4-3 7-7 7-3 0-5-1-7-3l-3 4 0-5z"/><circle cx="15" cy="10" r=".7" fill="currentColor"/></svg></div>
+                            <span class="demo-chat-author-label">LLaVA-OneVision-2</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-model">
+<pre class="demo-chat-code"><span class="t">&lt;temporal </span><span class="a">span=</span><span class="s">&quot;2.1 7.5&quot;</span><span class="t">&gt;</span>
+<span class="x">blonde woman in black sweatshirt sits in a parked car</span>
+<span class="t">&lt;/temporal&gt;</span></pre>
+                            <div class="demo-chat-videos">
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">PREDICTION</span>
+                              </div>
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">GROUND TRUTH</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="demo-slide" data-slide="3">
+                      <div class="demo-chat">
+                        <div class="demo-chat-turn demo-chat-turn-user">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-user">You</div>
+                            <span class="demo-chat-author-label">demo&nbsp;04</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-user">
+                            <p class="demo-chat-prompt">Woman points to the food on her kitchen counter.</p>
+                            <div class="demo-chat-rgb">
+                              <div class="tg-placeholder">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                <span>video placeholder</span>
+                              </div>
+                              <span class="demo-chat-vlabel">VIDEO</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="demo-chat-turn demo-chat-turn-model">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-model"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c0-3 2-6 6-6 3 0 5 1 8 0l4-3-1 6c0 4-3 7-7 7-3 0-5-1-7-3l-3 4 0-5z"/><circle cx="15" cy="10" r=".7" fill="currentColor"/></svg></div>
+                            <span class="demo-chat-author-label">LLaVA-OneVision-2</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-model">
+<pre class="demo-chat-code"><span class="t">&lt;temporal </span><span class="a">span=</span><span class="s">&quot;38.5 45.2&quot;</span><span class="t">&gt;</span>
+<span class="x">woman points to the food on her kitchen counter</span>
+<span class="t">&lt;/temporal&gt;</span></pre>
+                            <div class="demo-chat-videos">
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">PREDICTION</span>
+                              </div>
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">GROUND TRUTH</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="demo-slide" data-slide="4">
+                      <div class="demo-chat">
+                        <div class="demo-chat-turn demo-chat-turn-user">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-user">You</div>
+                            <span class="demo-chat-author-label">demo&nbsp;05</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-user">
+                            <p class="demo-chat-prompt">A woman in long brown hair is trying on a black hat in a shop.</p>
+                            <div class="demo-chat-rgb">
+                              <div class="tg-placeholder">
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                <span>video placeholder</span>
+                              </div>
+                              <span class="demo-chat-vlabel">VIDEO</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="demo-chat-turn demo-chat-turn-model">
+                          <div class="demo-chat-author">
+                            <div class="demo-chat-avatar demo-chat-avatar-model"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c0-3 2-6 6-6 3 0 5 1 8 0l4-3-1 6c0 4-3 7-7 7-3 0-5-1-7-3l-3 4 0-5z"/><circle cx="15" cy="10" r=".7" fill="currentColor"/></svg></div>
+                            <span class="demo-chat-author-label">LLaVA-OneVision-2</span>
+                          </div>
+                          <div class="demo-chat-bubble demo-chat-bubble-model">
+<pre class="demo-chat-code"><span class="t">&lt;temporal </span><span class="a">span=</span><span class="s">&quot;20.4 28.9&quot;</span><span class="t">&gt;</span>
+<span class="x">a woman in long brown hair is trying on a black hat in a shop</span>
+<span class="t">&lt;/temporal&gt;</span></pre>
+                            <div class="demo-chat-videos">
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">PREDICTION</span>
+                              </div>
+                              <div class="demo-chat-vid">
+                                <div class="tg-placeholder">
+                                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><polygon points="10 8 16 11 10 14"/></svg>
+                                </div>
+                                <span class="demo-chat-vlabel">GROUND TRUTH</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+                <div class="demo-carousel-nav">
+                  <div class="demo-carousel-dots">
+                    <button type="button" class="demo-carousel-dot active" data-go="0" aria-label="Go to example 1"></button>
+                    <button type="button" class="demo-carousel-dot" data-go="1" aria-label="Go to example 2"></button>
+                    <button type="button" class="demo-carousel-dot" data-go="2" aria-label="Go to example 3"></button>
+                    <button type="button" class="demo-carousel-dot" data-go="3" aria-label="Go to example 4"></button>
+                    <button type="button" class="demo-carousel-dot" data-go="4" aria-label="Go to example 5"></button>
+                  </div>
+                  <span class="demo-carousel-counter"><strong>1</strong> / 5</span>
                 </div>
               </div>
             </div>
